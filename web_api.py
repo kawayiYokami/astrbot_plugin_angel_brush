@@ -139,10 +139,15 @@ class BrushAPI:
             return _err("prompt 不能为空")
         use_mock = bool(payload.get("mock"))
         # 完整透传两工具全部参数（前端两 tab 共用此接口）
+        # 生成：size=AxB；编辑：resolution=最短边、aspect_ratio=比例，互不拼 AxB
         size_val = (
             str(payload.get("size") or payload.get("resolution") or "").strip()
             or None
         )
+        resolution_val = (
+            str(payload.get("resolution") or "").strip() or None
+        )
+        # 若前端编辑仍用 size 传最短边（如 1024），后端 service 会把 size 别名为 resolution
         aspect_ratio = str(payload.get("aspect_ratio") or "").strip() or None
         quality = str(payload.get("quality") or "").strip() or None
         negative_prompt = (
@@ -186,6 +191,7 @@ class BrushAPI:
         req: dict[str, Any] = {
             "prompt": prompt,
             "size": size_val,
+            "resolution": resolution_val or (size_val if operation == "edit" else None),
             "aspect_ratio": aspect_ratio,
             "quality": quality,
             "negative_prompt": negative_prompt,

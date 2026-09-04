@@ -124,14 +124,11 @@
                         </n-tag>
                         <n-input
                           v-model:value="keyInput[p.id]"
-                         
                           placeholder="sk-... 回车添加"
                           style="width: 220px"
+                          clearable
                           @keyup.enter="addKey(p)"
                         />
-                        <n-button quaternary @click="addKey(p)">
-                          <template #icon><Icon icon="lucide:plus" /></template>
-                        </n-button>
                       </div>
                     </n-form-item>
                     <div class="hint">支持多 key 轮询，空则不鉴权</div>
@@ -352,9 +349,9 @@
                       </div>
                     </n-form-item>
                     <n-grid :cols="2" :x-gap="10" :y-gap="6">
-                      <n-gi><n-form-item label="分辨率 (size / resolution)"><n-input v-model:value="editForm.size" placeholder="1024x1024" clearable /></n-form-item></n-gi>
-                      <n-gi><n-form-item label="快捷尺寸"><n-select v-model:value="editForm.size" :options="resOptions" placeholder="选择预设" clearable /></n-form-item></n-gi>
-                      <n-gi><n-form-item label="宽高比 (aspect_ratio)"><n-input v-model:value="editForm.aspect_ratio" placeholder="如 16:9" clearable /></n-form-item></n-gi>
+                      <n-gi><n-form-item label="分辨率（最短边，不填按原图）"><n-input v-model:value="editForm.size" placeholder="如 1024" clearable /></n-form-item></n-gi>
+                      <n-gi><n-form-item label="快捷分辨率"><n-select v-model:value="editForm.size" :options="editResOptions" placeholder="选择预设" clearable /></n-form-item></n-gi>
+                      <n-gi><n-form-item label="宽高比（不填按原图）"><n-input v-model:value="editForm.aspect_ratio" placeholder="如 16:9 / 1:1" clearable /></n-form-item></n-gi>
                       <n-gi><n-form-item label="质量 (quality)"><n-input v-model:value="editForm.quality" placeholder="如 medium" clearable /></n-form-item></n-gi>
                       <n-gi><n-form-item label="seed"><n-input v-model:value="editForm.seed" placeholder="留空随机" clearable /></n-form-item></n-gi>
                     </n-grid>
@@ -496,6 +493,12 @@ const resOptions = [
   { label: '1536x1024', value: '1536x1024' },
   { label: '1K', value: '1K' },
   { label: '2K', value: '2K' },
+]
+const editResOptions = [
+  { label: '512（最短边 512）', value: '512' },
+  { label: '1024（最短边 1024）', value: '1024' },
+  { label: '1536（最短边 1536）', value: '1536' },
+  { label: '2048（最短边 2048）', value: '2048' },
 ]
 
 interface Model {
@@ -948,9 +951,7 @@ onMounted(() => { void reload() })
 .sider-inner {
   height: 100%;
   background: var(--glass-thick-bg);
-  backdrop-filter: blur(40px) saturate(180%);
-  -webkit-backdrop-filter: blur(40px) saturate(180%);
-  border-right: 1px solid var(--glass-border);
+  border-right: 1px solid var(--glass-divider);
   display: flex;
   flex-direction: column;
 }

@@ -24,6 +24,14 @@ except ImportError:
     logger = logging.getLogger(__name__)
 
 
+def _image_dimensions(data: bytes) -> tuple[int, int] | None:
+    try:
+        with Image.open(io.BytesIO(data)) as im:
+            return int(im.width), int(im.height)
+    except Exception:
+        return None
+
+
 def _normalize_request(raw: dict[str, Any]) -> dict[str, Any]:
     prompt = str(raw.get("prompt") or "").strip()
     if not prompt:
@@ -44,10 +52,19 @@ def _normalize_request(raw: dict[str, Any]) -> dict[str, Any]:
     n = max(1, min(4, n))
     if op == "edit":
         n = 1
+    # resolution 语义分流：generate 为 AxB，edit 为最短边单值
+    if op == "edit":
+        resolution = (str(raw.get("resolution") or raw.get("size") or "").strip() or None)
+        size = None
+        # 兼容误传 AxB 的情况：若 resolution 含 x/× 则保留，后续回退时会取最短边
+    else:
+        size = (str(raw.get("size") or raw.get("resolution") or "").strip() or None)
+        resolution = None
     return {
         "prompt": prompt,
         "operation": op,
-        "size": (str(raw.get("size") or raw.get("resolution") or "").strip() or None),
+        "size": size,
+        "resolution": resolution,
         "aspect_ratio": (str(raw.get("aspect_ratio") or "").strip() or None),
         "quality": (str(raw.get("quality") or "").strip() or None),
         "negative_prompt": (str(raw.get("negative_prompt") or "").strip() or None),
@@ -57,6 +74,33 @@ def _normalize_request(raw: dict[str, Any]) -> dict[str, Any]:
         "mask": mask,
         "model_id": (str(raw.get("model_id") or "").strip() or None),
     }
+
+
+def _resolve_edit_defaults(req: dict[str, Any], edit_inputs: dict[str, Any]) -> None:
+    if req.get("operation") != "edit":
+        return
+    if not edit_inputs.get("images"):
+        return
+    dims = _image_dimensions(edit_inputs["images"][0]["bytes"])
+    if not dims:
+        return
+    w, h = dims
+    orig_short = min(w, h)
+    orig_aspect = prov.aspect_from_dimensions(w, h)
+    # resolution：最短边，不填按原图
+    if not req.get("resolution"):
+        req["resolution"] = str(orig_short)
+    else:
+        r = str(req["resolution"]).strip()
+        low = r.lower()
+        # 若误传 AxB，取最短边，避免 AxB 冲突
+        if "x" in low or "×" in r:
+            parsed = prov.parse_pixel_size(r)
+            if parsed:
+                req["resolution"] = str(min(parsed))
+    # aspect_ratio：比例，不填按原图
+    if not req.get("aspect_ratio"):
+        req["aspect_ratio"] = orig_aspect
 
 
 async def _load_image_bytes(ref: str) -> tuple[bytes, str]:
@@ -513,6 +557,7 @@ async def generate_images(
         f"[天使的画笔] 开始 operation={req['operation']} provider={provider['name']} model={model['model']} prompt={req['prompt'][:80]}"
     )
     edit_inputs = await _load_edit_inputs(req)
+    _resolve_edit_defaults(req, edit_inputs)
     pending_list, provider_text = await _request_with_provider(
         provider, model, req, edit_inputs, http_client=http_client
     )

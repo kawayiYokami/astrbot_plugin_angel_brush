@@ -1,6 +1,7 @@
 /**
- * 全局主题系统：以 iOS 26 Liquid Glass 为基准。
- * 拷贝自 angel_heart，仅 storage key 改为 brush 独立。
+ * 全局主题系统：实色卡片基准。
+ * - A 色（边框/分隔线）唯一真相源：tokens.light/dark.divider
+ * - 背景/侧栏/卡片三色统一：bgPage / bgSider / bgCard
  */
 import type { GlobalThemeOverrides } from 'naive-ui'
 import type { ComputedRef, InjectionKey, Ref } from 'vue'
@@ -51,8 +52,25 @@ const brand = {
   dark: { base: '#0a84ff', hover: '#409cff', pressed: '#0069cc', suppl: '#409cff' },
 }
 
+// A 色与面色：亮/暗各一套，theme.ts 为唯一真相源，App.vue 的 CSS 变量需与此对齐
+const tokens = {
+  light: {
+    bgPage: '#F5F5F5',
+    bgSider: '#ffffff',
+    bgCard: '#ffffff',
+    divider: 'rgba(60, 60, 67, 0.12)',
+  },
+  dark: {
+    bgPage: '#101014',
+    bgSider: '#18181c',
+    bgCard: '#18181c',
+    divider: 'rgba(84, 84, 88, 0.4)',
+  },
+} as const
+
 export function buildThemeOverrides(mode: ThemeMode): GlobalThemeOverrides {
   const c = brand[mode]
+  const t = tokens[mode]
   return {
     common: {
       primaryColor: c.base,
@@ -62,14 +80,24 @@ export function buildThemeOverrides(mode: ThemeMode): GlobalThemeOverrides {
       fontSize: '15px',
       borderRadius: '10px',
       borderRadiusSmall: '8px',
-      bodyColor: mode === 'light' ? '#F5F5F5' : '#101014',
+      bodyColor: t.bgPage,
+      cardColor: t.bgCard,
+      modalColor: t.bgCard,
+      popoverColor: t.bgCard,
+      dividerColor: t.divider,
+      borderColor: t.divider,
     },
     Button: {
       borderRadius: '999px',
     },
     Layout: {
-      color: mode === 'light' ? '#F5F5F5' : '#101014',
-      siderColor: mode === 'light' ? '#F5F5F5' : '#101014',
+      color: t.bgPage,
+      siderColor: t.bgSider,
+    },
+    Card: {
+      color: t.bgCard,
+      colorEmbedded: t.bgCard,
+      borderColor: t.divider,
     },
   }
 }

@@ -134,6 +134,14 @@ class AngelImageEditTool(FunctionTool[AstrAgentContext]):
                     "type": "string",
                     "description": "可选 mask 图片引用，白色/不透明区域表示允许修改；仅部分供应商支持，不支持时会返回错误。",
                 },
+                "resolution": {
+                    "type": "string",
+                    "description": "最短边长度，例如 1024，不填按原图最短边；不要与 aspect_ratio 拼成 AxB，避免冲突。",
+                },
+                "aspect_ratio": {
+                    "type": "string",
+                    "description": "宽高比，例如 16:9、9:16、1:1、3:4，不填按原图比例。",
+                },
             },
             "required": ["prompt", "images"],
             "additionalProperties": False,
@@ -157,8 +165,17 @@ class AngelImageEditTool(FunctionTool[AstrAgentContext]):
         if isinstance(images, str):
             images = [images]
         images = [str(x).strip() for x in images if str(x).strip()]
+        resolution = str(kwargs.get("resolution") or "").strip() or None
+        aspect_ratio = str(kwargs.get("aspect_ratio") or "").strip() or None
         result = await service.generate_images(
             self.data_dir,
-            {"prompt": prompt, "images": images, "mask": mask, "operation": "edit"},
+            {
+                "prompt": prompt,
+                "images": images,
+                "mask": mask,
+                "operation": "edit",
+                "resolution": resolution,
+                "aspect_ratio": aspect_ratio,
+            },
         )
         return _tool_success_value(result, "图片已编辑并保存到插件数据目录")
