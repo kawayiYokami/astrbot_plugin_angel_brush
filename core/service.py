@@ -16,12 +16,7 @@ from . import config as cfg
 from . import providers as prov
 from . import storage
 
-try:
-    from astrbot.api import logger
-except ImportError:
-    import logging
-
-    logger = logging.getLogger(__name__)
+from astrbot.api import logger
 
 
 def _image_dimensions(data: bytes) -> tuple[int, int] | None:

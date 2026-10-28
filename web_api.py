@@ -9,12 +9,7 @@ from typing import Any
 
 from PIL import Image
 
-try:
-    from astrbot.api import logger
-except ImportError:
-    import logging
-
-    logger = logging.getLogger(__name__)
+from astrbot.api import logger
 
 try:
     from astrbot.api.web import error_response, json_response, request

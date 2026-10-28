@@ -7,12 +7,7 @@ import os
 from astrbot.api.star import Context, Star, register
 from astrbot.core.star.star_tools import StarTools
 
-try:
-    from astrbot.api import logger
-except ImportError:
-    import logging
-
-    logger = logging.getLogger(__name__)
+from astrbot.api import logger
 
 from .tools import AngelImageEditTool, AngelImageGenerateTool
 
