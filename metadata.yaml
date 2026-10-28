@@ -1,6 +1,16 @@
 name: astrbot_plugin_angel_brush
 display_name: 天使的画笔
-desc: "让机器人会画画、会改图：说一句话就出图，发张图就能改；六家画图服务随便换，模型自己挑，配置全在网页上点点就行。"
-version: 0.2.0
+desc: "AI生图画图：说话文生图出图，发图图生图改图；六家图片生成服务可换，WebUI点选即用。"
+short_desc: "说话出图、发图改图的AI画笔"
+version: 0.2.1
 author: kawayiYokami
 repo: https://github.com/kawayiYokami/astrbot_plugin_angel_brush
+social_link: https://github.com/kawayiYokami
+category: 娱乐
+tags:
+  - 生图
+  - 文生图
+  - 图生图
+  - 画图
+  - 图片生成
+  - ComfyUI
