@@ -123,7 +123,27 @@ def openai_generation_payload(
     is_gpt = str(model.get("model") or "").strip().lower().startswith("gpt-image")
     arbitrary = str(model.get("model") or "").strip().lower().startswith("gpt-image-2")
     if is_gpt:
-        payload["output_format"] = "png"
+        # 输出格式：默认 png；gpt-image-2.6 起支持 gif 动图
+        out_fmt = _trim_opt(req.get("output_format")) or "png"
+        if out_fmt not in ("png", "jpeg", "webp", "gif"):
+            out_fmt = "png"
+        payload["output_format"] = out_fmt
+        # 动图参数：仅 gif 时生效（官方口径 frame_count 2–16 默认 9；frame_duration_ms 20–2000 默认 200）
+        if out_fmt == "gif":
+            fc = req.get("frame_count")
+            try:
+                fc = int(fc) if fc is not None and str(fc).strip() != "" else None
+            except Exception:
+                fc = None
+            if fc is not None:
+                payload["frame_count"] = max(2, min(16, fc))
+            fd = req.get("frame_duration_ms")
+            try:
+                fd = int(fd) if fd is not None and str(fd).strip() != "" else None
+            except Exception:
+                fd = None
+            if fd is not None:
+                payload["frame_duration_ms"] = max(20, min(2000, fd))
     else:
         payload["response_format"] = "b64_json"
 

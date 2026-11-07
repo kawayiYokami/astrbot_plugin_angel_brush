@@ -275,6 +275,11 @@
                       <n-gi><n-form-item label="质量 (quality)"><n-input v-model:value="genForm.quality" placeholder="如 medium / high" clearable /></n-form-item></n-gi>
                       <n-gi><n-form-item label="数量 n (1-4)"><n-input-number v-model:value="genForm.n" :min="1" :max="4" style="width: 100%" /></n-form-item></n-gi>
                       <n-gi><n-form-item label="seed"><n-input v-model:value="genForm.seed" placeholder="留空随机" clearable /></n-form-item></n-gi>
+                      <n-gi><n-form-item label="输出格式（gpt-image 支持）"><n-select v-model:value="genForm.output_format" :options="outputFormatOptions" placeholder="png" clearable /></n-form-item></n-gi>
+                    </n-grid>
+                    <n-grid v-if="genForm.output_format === 'gif'" :cols="2" :x-gap="10" :y-gap="6">
+                      <n-gi><n-form-item label="动图帧数 frame_count (2-16)"><n-input-number v-model:value="genForm.frame_count" :min="2" :max="16" style="width: 100%" /></n-form-item></n-gi>
+                      <n-gi><n-form-item label="每帧时长 frame_duration_ms (20-2000)"><n-input-number v-model:value="genForm.frame_duration_ms" :min="20" :max="2000" style="width: 100%" /></n-form-item></n-gi>
                     </n-grid>
                   </n-form>
                   <div class="test-actions">
@@ -499,6 +504,12 @@ const editResOptions = [
   { label: '1024（最短边 1024）', value: '1024' },
   { label: '1536（最短边 1536）', value: '1536' },
   { label: '2048（最短边 2048）', value: '2048' },
+]
+const outputFormatOptions = [
+  { label: 'png', value: 'png' },
+  { label: 'jpeg', value: 'jpeg' },
+  { label: 'webp', value: 'webp' },
+  { label: 'gif（动图）', value: 'gif' },
 ]
 
 interface Model {
@@ -756,6 +767,9 @@ const genForm = reactive({
   quality: '',
   n: 1 as number,
   seed: '' as string,
+  output_format: null as string | null,
+  frame_count: null as number | null,
+  frame_duration_ms: null as number | null,
 })
 const editForm = reactive({
   model_id: null as string | null,
@@ -833,6 +847,9 @@ async function doGenTest(mock: boolean) {
       n: genForm.n,
       seed: genForm.seed || undefined,
       model_id: genForm.model_id || undefined,
+      output_format: genForm.output_format || undefined,
+      frame_count: genForm.output_format === 'gif' ? (genForm.frame_count ?? undefined) : undefined,
+      frame_duration_ms: genForm.output_format === 'gif' ? (genForm.frame_duration_ms ?? undefined) : undefined,
       operation: 'generate',
       mock,
     }

@@ -148,6 +148,11 @@ class BrushAPI:
         negative_prompt = (
             str(payload.get("negative_prompt") or "").strip() or None
         )
+        # 输出格式（openai gpt-image 支持 png/jpeg/webp/gif 动图）
+        output_format = str(payload.get("output_format") or "").strip() or None
+        # 动图参数（gif 时生效）
+        frame_count = payload.get("frame_count")
+        frame_duration_ms = payload.get("frame_duration_ms")
         model_id = str(payload.get("model_id") or "").strip() or None
         operation = str(payload.get("operation") or "").strip() or None
         # n / seed 需容错
@@ -190,6 +195,9 @@ class BrushAPI:
             "aspect_ratio": aspect_ratio,
             "quality": quality,
             "negative_prompt": negative_prompt,
+            "output_format": output_format,
+            "frame_count": frame_count,
+            "frame_duration_ms": frame_duration_ms,
             "n": n_val,
             "seed": seed_val,
             "model_id": model_id,

@@ -427,3 +427,15 @@ def build_style_hint(
     if cus:
         parts.append(f"用户希望使用的画风：{cus}")
     return "；".join(parts)
+
+
+def model_supports_gif(model: dict[str, Any] | None) -> bool:
+    """判断模型是否支持 gif 动图输出。
+
+    当前仅 OpenAI gpt-image-2 系列（2.6 起官方支持 animated GIF）。
+    其它供应商会忽略 output_format="gif"，因此需要提前拦截并提示用户。
+    """
+    if not model:
+        return False
+    mname = str(model.get("model") or "").strip().lower()
+    return mname.startswith("gpt-image-2")
