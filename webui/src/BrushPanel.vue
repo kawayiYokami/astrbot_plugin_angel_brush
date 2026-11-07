@@ -359,6 +359,11 @@
                       <n-gi><n-form-item label="宽高比（不填按原图）"><n-input v-model:value="editForm.aspect_ratio" placeholder="如 16:9 / 1:1" clearable /></n-form-item></n-gi>
                       <n-gi><n-form-item label="质量 (quality)"><n-input v-model:value="editForm.quality" placeholder="如 medium" clearable /></n-form-item></n-gi>
                       <n-gi><n-form-item label="seed"><n-input v-model:value="editForm.seed" placeholder="留空随机" clearable /></n-form-item></n-gi>
+                      <n-gi><n-form-item label="输出格式（gpt-image 支持）"><n-select v-model:value="editForm.output_format" :options="outputFormatOptions" placeholder="png" clearable /></n-form-item></n-gi>
+                    </n-grid>
+                    <n-grid v-if="editForm.output_format === 'gif'" :cols="2" :x-gap="10" :y-gap="6">
+                      <n-gi><n-form-item label="动图帧数 frame_count (2-16)"><n-input-number v-model:value="editForm.frame_count" :min="2" :max="16" style="width: 100%" /></n-form-item></n-gi>
+                      <n-gi><n-form-item label="每帧时长 frame_duration_ms (20-2000)"><n-input-number v-model:value="editForm.frame_duration_ms" :min="20" :max="2000" style="width: 100%" /></n-form-item></n-gi>
                     </n-grid>
                   </n-form>
                   <n-alert v-if="!editImages.length" type="warning" :show-icon="false" style="margin-top: 6px">请先上传至少一张输入图片</n-alert>
@@ -779,6 +784,9 @@ const editForm = reactive({
   aspect_ratio: '',
   quality: '',
   seed: '' as string,
+  output_format: null as string | null,
+  frame_count: null as number | null,
+  frame_duration_ms: null as number | null,
 })
 const genTesting = ref(false)
 const genMsg = ref('')
@@ -886,6 +894,9 @@ async function doEditTest(mock: boolean) {
       negative_prompt: editForm.negative_prompt || undefined,
       seed: editForm.seed || undefined,
       model_id: editForm.model_id || undefined,
+      output_format: editForm.output_format || undefined,
+      frame_count: editForm.output_format === 'gif' ? (editForm.frame_count ?? undefined) : undefined,
+      frame_duration_ms: editForm.output_format === 'gif' ? (editForm.frame_duration_ms ?? undefined) : undefined,
       operation: 'edit',
       images: editImages.value.map((it) => it.dataUrl),
       mask: maskImage.value?.dataUrl || undefined,

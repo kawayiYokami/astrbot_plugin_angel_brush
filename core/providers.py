@@ -358,7 +358,26 @@ def openai_edit_scalar_fields(
     mn = str(model.get("model") or "").lower()
     is_gpt = mn.startswith("gpt-image")
     if is_gpt:
-        fields.append(("output_format", "png"))
+        # 编辑同样支持 gif 动图（multipart 字段均为字符串）
+        out_fmt = _trim_opt(req.get("output_format")) or "png"
+        if out_fmt not in ("png", "jpeg", "webp", "gif"):
+            out_fmt = "png"
+        fields.append(("output_format", out_fmt))
+        if out_fmt == "gif":
+            fc = req.get("frame_count")
+            try:
+                fc = int(fc) if fc is not None and str(fc).strip() != "" else None
+            except Exception:
+                fc = None
+            if fc is not None:
+                fields.append(("frame_count", str(max(2, min(16, fc)))))
+            fd = req.get("frame_duration_ms")
+            try:
+                fd = int(fd) if fd is not None and str(fd).strip() != "" else None
+            except Exception:
+                fd = None
+            if fd is not None:
+                fields.append(("frame_duration_ms", str(max(20, min(2000, fd)))))
     else:
         fields.append(("response_format", "b64_json"))
     # 编辑：resolution=最短边 + aspect_ratio=比例，二者独立不拼 AxB 冲突；由 service 已按原图回退

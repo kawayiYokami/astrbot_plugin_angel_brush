@@ -99,11 +99,22 @@ class AngelBrushPlugin(Star):
             event.should_call_llm(True)
             return
 
+        # 用户引用/发送了图片 → 走图生图，把静图改造成动图；否则纯文生图
         try:
-            result = await service.generate_images(
-                self.data_dir,
-                {"prompt": prompt, "operation": "generate", "output_format": "gif"},
-            )
+            from .tools import collect_event_image_refs
+
+            refs = await collect_event_image_refs(event)
+        except Exception:
+            refs = []
+        payload: dict = {"prompt": prompt, "output_format": "gif"}
+        if refs:
+            payload["operation"] = "edit"
+            payload["images"] = refs
+        else:
+            payload["operation"] = "generate"
+
+        try:
+            result = await service.generate_images(self.data_dir, payload)
         except Exception as e:
             logger.warning(f"AngelBrush 关键词动图生成失败: {e}")
             event.set_result(MessageEventResult().message(f"动图生成失败：{e}"))

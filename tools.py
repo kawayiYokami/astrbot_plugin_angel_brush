@@ -46,6 +46,40 @@ def update_tool_descriptions(
         _update_description(edit_tool, _EDIT_BASE_DESC, edit_tool.data_dir)
 
 
+async def collect_event_image_refs(event: Any) -> list[str]:
+    """从当前消息（含引用/回复的图）中提取图片，返回 service 可解析的引用。
+
+    LLM 无法得知用户"引用图片"的真实本地路径，若沿用模型自填的 images，
+    就会出现"改出来的图跟原图无关"。因此编辑类工具必须以消息里的真实图片为准：
+    优先本地绝对路径，否则统一转成 base64 data URL。
+    """
+    if event is None:
+        return []
+    try:
+        comps = event.get_messages() or []
+    except Exception:
+        return []
+    try:
+        from astrbot.core.message.components import Image  # type: ignore
+    except Exception:
+        return []
+    refs: list[str] = []
+    for c in comps:
+        if not isinstance(c, Image):
+            continue
+        p = str(getattr(c, "path", "") or "").strip()
+        if p:
+            refs.append(p)
+            continue
+        try:
+            b64 = await c.convert_to_base64()
+        except Exception:
+            b64 = ""
+        if b64:
+            refs.append(f"data:image/png;base64,{b64}")
+    return refs
+
+
 def _tool_success_value(result: dict[str, Any], prefix: str) -> str:
     images = result.get("images") or []
     image_lines = "\n".join(
@@ -165,6 +199,15 @@ class AngelImageEditTool(FunctionTool[AstrAgentContext]):
         if isinstance(images, str):
             images = [images]
         images = [str(x).strip() for x in images if str(x).strip()]
+        # 用户在当前消息里引用/发送的图片才是真正的编辑对象，覆盖模型自填的 images
+        try:
+            event_refs = await collect_event_image_refs(
+                getattr(getattr(context, "context", None), "event", None)
+            )
+            if event_refs:
+                images = event_refs
+        except Exception:
+            pass
         resolution = str(kwargs.get("resolution") or "").strip() or None
         aspect_ratio = str(kwargs.get("aspect_ratio") or "").strip() or None
         result = await service.generate_images(
