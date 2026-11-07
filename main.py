@@ -129,9 +129,7 @@ class AngelBrushPlugin(Star):
             event.should_call_llm(True)
             return
 
-        mer = MessageEventResult().message(
-            f"动图好了（{result.get('provider_name', '')} / {result.get('model', '')}）"
-        )
+        mer = MessageEventResult()
         for img in images:
             path = img.get("absolute_path")
             if path:
