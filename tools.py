@@ -139,6 +139,14 @@ class AngelImageGenerateTool(FunctionTool[AstrAgentContext]):
                     "type": "string",
                     "description": "输出格式：png（默认）、jpeg、webp、gif（动图，需 gpt-image-2 系列模型）。用户要求动图/会动的图时传 gif。",
                 },
+                "frame_count": {
+                    "type": "integer",
+                    "description": "动图帧数 2-16，仅 output_format=gif 时生效；不填用供应商默认（9）。",
+                },
+                "frame_duration_ms": {
+                    "type": "integer",
+                    "description": "动图每帧时长（毫秒）20-2000，仅 output_format=gif 时生效；不填用默认 200。",
+                },
             },
             "required": ["prompt"],
             "additionalProperties": False,
@@ -159,6 +167,8 @@ class AngelImageGenerateTool(FunctionTool[AstrAgentContext]):
         prompt = str(kwargs.get("prompt") or "").strip()
         resolution = str(kwargs.get("resolution") or "").strip() or None
         output_format = str(kwargs.get("output_format") or "").strip() or None
+        frame_count = kwargs.get("frame_count")
+        frame_duration_ms = kwargs.get("frame_duration_ms")
         # 用户在消息里引用/发送了图片时，本质是改图请求；模型常会错调 generate，
         # 这里自动切到 edit，保证引用的图片一定参与生成。
         try:
@@ -175,6 +185,8 @@ class AngelImageGenerateTool(FunctionTool[AstrAgentContext]):
                     "operation": "edit",
                     "images": event_refs,
                     "output_format": output_format,
+                    "frame_count": frame_count,
+                    "frame_duration_ms": frame_duration_ms,
                 },
             )
             return _tool_success_value(result, "已按引用的图片完成编辑并保存到插件数据目录")
@@ -185,6 +197,8 @@ class AngelImageGenerateTool(FunctionTool[AstrAgentContext]):
                 "size": resolution,
                 "operation": "generate",
                 "output_format": output_format,
+                "frame_count": frame_count,
+                "frame_duration_ms": frame_duration_ms,
             },
         )
         return _tool_success_value(result, "图片已生成并保存到插件数据目录")
@@ -218,6 +232,18 @@ class AngelImageEditTool(FunctionTool[AstrAgentContext]):
                 "aspect_ratio": {
                     "type": "string",
                     "description": "宽高比，例如 16:9、9:16、1:1、3:4，不填按原图比例。",
+                },
+                "output_format": {
+                    "type": "string",
+                    "description": "输出格式：png（默认）、jpeg、webp、gif。用户要求动图 / 让图动起来 / 做成 GIF 时传 gif（需 gpt-image-2 系列模型）。",
+                },
+                "frame_count": {
+                    "type": "integer",
+                    "description": "动图帧数 2-16，仅 output_format=gif 时生效；不填用供应商默认（9）。",
+                },
+                "frame_duration_ms": {
+                    "type": "integer",
+                    "description": "动图每帧时长（毫秒）20-2000，仅 output_format=gif 时生效；不填用默认 200。",
                 },
             },
             "required": ["prompt", "images"],
@@ -253,6 +279,9 @@ class AngelImageEditTool(FunctionTool[AstrAgentContext]):
             pass
         resolution = str(kwargs.get("resolution") or "").strip() or None
         aspect_ratio = str(kwargs.get("aspect_ratio") or "").strip() or None
+        output_format = str(kwargs.get("output_format") or "").strip() or None
+        frame_count = kwargs.get("frame_count")
+        frame_duration_ms = kwargs.get("frame_duration_ms")
         result = await service.generate_images(
             self.data_dir,
             {
@@ -262,6 +291,9 @@ class AngelImageEditTool(FunctionTool[AstrAgentContext]):
                 "operation": "edit",
                 "resolution": resolution,
                 "aspect_ratio": aspect_ratio,
+                "output_format": output_format,
+                "frame_count": frame_count,
+                "frame_duration_ms": frame_duration_ms,
             },
         )
         return _tool_success_value(result, "图片已编辑并保存到插件数据目录")
