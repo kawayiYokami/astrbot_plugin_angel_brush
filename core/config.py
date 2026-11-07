@@ -331,6 +331,7 @@ def save_config(
     custom_style: str = "",
     gif_frame_count: int | None = None,
     gif_frame_duration_ms: int | None = None,
+    gif_auto_fit: bool | None = None,
 ) -> None:
     cfg_path = data_dir / "providers.json"
     cfg_path.parent.mkdir(parents=True, exist_ok=True)
@@ -344,6 +345,8 @@ def save_config(
         payload["gif_frame_count"] = max(2, min(16, int(gif_frame_count)))
     if gif_frame_duration_ms is not None:
         payload["gif_frame_duration_ms"] = max(20, min(2000, int(gif_frame_duration_ms)))
+    if gif_auto_fit is not None:
+        payload["gif_auto_fit"] = bool(gif_auto_fit)
     cfg_path.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2),
         encoding="utf-8",
@@ -456,6 +459,19 @@ def load_gif_defaults(data_dir: Path) -> dict[str, Any]:
         except Exception:
             pass
     return {"frame_count": fc, "frame_duration_ms": fd}
+
+
+def load_gif_auto_fit(data_dir: Path) -> bool:
+    """读取「动图尺寸自动换算」开关，未配置时默认开启。"""
+    cfg_path = data_dir / "providers.json"
+    if cfg_path.exists():
+        try:
+            raw = json.loads(cfg_path.read_text(encoding="utf-8"))
+            if "gif_auto_fit" in raw:
+                return bool(raw["gif_auto_fit"])
+        except Exception:
+            pass
+    return True
 
 
 def model_supports_gif(model: dict[str, Any] | None) -> bool:

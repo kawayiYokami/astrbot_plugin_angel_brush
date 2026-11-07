@@ -254,6 +254,14 @@
                       </n-form-item>
                     </n-gi>
                   </n-grid>
+                  <n-form-item label="尺寸自动换算">
+                    <n-checkbox v-model:checked="gifAutoFit">
+                      按官方像素预算自动换算尺寸（推荐开启）
+                    </n-checkbox>
+                    <template #feedback>
+                      <span class="hint">开启后会把超预算的尺寸自动缩小并对齐 16 倍数；关闭则原样发送你填的尺寸，可能被上游拒绝或自行压缩。</span>
+                    </template>
+                  </n-form-item>
                   <span class="hint" style="display:block;margin-top:-4px">
                     帧数越多越流畅但生成更慢。默认 16 帧 / 100ms（约 1.6s 循环）；供应商默认只有 9 帧 / 200ms，会明显卡顿。
                   </span>
@@ -567,6 +575,7 @@ const customStyle = ref('')
 // 动图默认参数：对话/关键词生成 gif 时未显式指定就用这里的值
 const gifFrameCount = ref<number>(16)
 const gifFrameDurationMs = ref<number>(100)
+const gifAutoFit = ref(true)
 const templates = ref<Record<string, any>>({})
 const baseline = ref('')
 
@@ -620,6 +629,7 @@ const dirty = computed(() => {
     customStyle: customStyle.value,
     gifFrameCount: gifFrameCount.value,
     gifFrameDurationMs: gifFrameDurationMs.value,
+    gifAutoFit: gifAutoFit.value,
   })
   return cur !== baseline.value
 })
@@ -653,6 +663,7 @@ async function reload() {
     customStyle.value = data.custom_style || ''
     gifFrameCount.value = Number(data.gif_frame_count) || 16
     gifFrameDurationMs.value = Number(data.gif_frame_duration_ms) || 100
+    gifAutoFit.value = data.gif_auto_fit !== false
     templates.value = data.templates || {}
     baseline.value = JSON.stringify({
       providers: providers.value,
@@ -661,6 +672,7 @@ async function reload() {
       customStyle: customStyle.value,
       gifFrameCount: gifFrameCount.value,
       gifFrameDurationMs: gifFrameDurationMs.value,
+      gifAutoFit: gifAutoFit.value,
     })
   } catch (e) {
     message.error(`加载失败: ${(e as Error).message}`)
@@ -751,6 +763,7 @@ async function save() {
       custom_style: customStyle.value.trim(),
       gif_frame_count: gifFrameCount.value,
       gif_frame_duration_ms: gifFrameDurationMs.value,
+      gif_auto_fit: gifAutoFit.value,
     }
     const data: any = await apiPost('config/save', payload)
     // server returns normalized providers/options, keep client in sync
@@ -765,6 +778,7 @@ async function save() {
         customStyle: customStyle.value,
         gifFrameCount: gifFrameCount.value,
         gifFrameDurationMs: gifFrameDurationMs.value,
+        gifAutoFit: gifAutoFit.value,
       })
     }
     message.success('已保存并即时生效')

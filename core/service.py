@@ -604,6 +604,7 @@ async def generate_images(
             req["frame_count"] = gif_defaults.get("frame_count")
         if req.get("frame_duration_ms") is None:
             req["frame_duration_ms"] = gif_defaults.get("frame_duration_ms")
+        req["gif_auto_fit"] = cfg.load_gif_auto_fit(data_dir)
     providers, default_id = cfg.load_config(data_dir)
     provider, model, eid = cfg.resolve_model(providers, default_id, req.get("model_id"))
     logger.info(

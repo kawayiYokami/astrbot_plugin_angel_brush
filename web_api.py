@@ -81,6 +81,7 @@ class BrushAPI:
                 "custom_style": style.get("custom_style", ""),
                 "gif_frame_count": gif_defaults["frame_count"],
                 "gif_frame_duration_ms": gif_defaults["frame_duration_ms"],
+                "gif_auto_fit": bool(cfg.load_gif_auto_fit(self.data_dir)),
             }
         )
 
@@ -109,6 +110,8 @@ class BrushAPI:
 
         gif_frame_count = _opt_int(payload.get("gif_frame_count"))
         gif_frame_duration_ms = _opt_int(payload.get("gif_frame_duration_ms"))
+        gif_auto_fit = payload.get("gif_auto_fit")
+        gif_auto_fit = bool(gif_auto_fit) if gif_auto_fit is not None else None
         try:
             cfg.save_config(
                 self.data_dir,
@@ -118,6 +121,7 @@ class BrushAPI:
                 custom_style=custom_style,
                 gif_frame_count=gif_frame_count,
                 gif_frame_duration_ms=gif_frame_duration_ms,
+                gif_auto_fit=gif_auto_fit,
             )
         except Exception as e:
             logger.error(f"AngelBrush save failed: {e}", exc_info=True)
@@ -139,6 +143,7 @@ class BrushAPI:
                 "custom_style": custom_style,
                 "gif_frame_count": cfg.load_gif_defaults(self.data_dir)["frame_count"],
                 "gif_frame_duration_ms": cfg.load_gif_defaults(self.data_dir)["frame_duration_ms"],
+                "gif_auto_fit": bool(cfg.load_gif_auto_fit(self.data_dir)),
             },
             "已保存",
         )

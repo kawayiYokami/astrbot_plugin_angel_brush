@@ -214,7 +214,7 @@ def openai_generation_payload(
     )
     if size:
         # 动图：按总像素预算收缩每帧尺寸，避免 frame_count × 单帧像素超限
-        if str(payload.get("output_format") or "") == "gif":
+        if req.get("gif_auto_fit", True) and str(payload.get("output_format") or "") == "gif":
             parsed = parse_pixel_size(size)
             if parsed:
                 frames = payload.get("frame_count") or GIF_DEFAULT_FRAMES
@@ -484,7 +484,7 @@ def openai_edit_scalar_fields(
             size = openai_size_from_aspect(aspect, arbitrary)
     if size:
         # 动图：按总像素预算收缩每帧尺寸（multipart 同样适用）
-        if dict(fields).get("output_format") == "gif":
+        if req.get("gif_auto_fit", True) and dict(fields).get("output_format") == "gif":
             parsed = parse_pixel_size(size)
             if parsed:
                 fc_val = req.get("frame_count")
