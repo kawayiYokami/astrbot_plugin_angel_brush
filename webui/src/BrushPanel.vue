@@ -236,6 +236,27 @@
                       <span class="hint">留空则不注入；与模型推荐可同时生效</span>
                     </template>
                   </n-form-item>
+
+                  <!-- 动图默认参数 -->
+                  <n-divider style="margin-top: 16px" />
+                  <div class="style-head">
+                    <span class="style-title">动图默认参数（对话生成 gif 时生效）</span>
+                  </div>
+                  <n-grid :cols="2" :x-gap="10" :y-gap="6">
+                    <n-gi>
+                      <n-form-item label="帧数 frame_count (2-16)">
+                        <n-input-number v-model:value="gifFrameCount" :min="2" :max="16" style="width: 100%" />
+                      </n-form-item>
+                    </n-gi>
+                    <n-gi>
+                      <n-form-item label="每帧时长 ms (20-2000)">
+                        <n-input-number v-model:value="gifFrameDurationMs" :min="20" :max="2000" :step="10" style="width: 100%" />
+                      </n-form-item>
+                    </n-gi>
+                  </n-grid>
+                  <span class="hint" style="display:block;margin-top:-4px">
+                    帧数越多越流畅但生成更慢。默认 16 帧 / 100ms（约 1.6s 循环）；供应商默认只有 9 帧 / 200ms，会明显卡顿。
+                  </span>
                 </n-form>
                 <n-alert v-if="!modelOptions.length" type="warning" :show-icon="false" style="margin-top: 10px">还没有可用模型，请先在供应商设置中添加并启用供应商与模型</n-alert>
                 <div class="hint" style="margin-top: 8px">切换后自动保存并即时生效，无需再点右下角保存</div>
@@ -543,6 +564,9 @@ const providers = ref<Provider[]>([])
 const defaultModelId = ref<string | null>(null)
 const styleRecommend = ref(false)
 const customStyle = ref('')
+// 动图默认参数：对话/关键词生成 gif 时未显式指定就用这里的值
+const gifFrameCount = ref<number>(16)
+const gifFrameDurationMs = ref<number>(100)
 const templates = ref<Record<string, any>>({})
 const baseline = ref('')
 
@@ -594,6 +618,8 @@ const dirty = computed(() => {
     defaultModelId: defaultModelId.value,
     styleRecommend: styleRecommend.value,
     customStyle: customStyle.value,
+    gifFrameCount: gifFrameCount.value,
+    gifFrameDurationMs: gifFrameDurationMs.value,
   })
   return cur !== baseline.value
 })
@@ -625,12 +651,16 @@ async function reload() {
     defaultModelId.value = data.default_model_id || null
     styleRecommend.value = !!data.style_recommend
     customStyle.value = data.custom_style || ''
+    gifFrameCount.value = Number(data.gif_frame_count) || 16
+    gifFrameDurationMs.value = Number(data.gif_frame_duration_ms) || 100
     templates.value = data.templates || {}
     baseline.value = JSON.stringify({
       providers: providers.value,
       defaultModelId: defaultModelId.value,
       styleRecommend: styleRecommend.value,
       customStyle: customStyle.value,
+      gifFrameCount: gifFrameCount.value,
+      gifFrameDurationMs: gifFrameDurationMs.value,
     })
   } catch (e) {
     message.error(`加载失败: ${(e as Error).message}`)
@@ -719,6 +749,8 @@ async function save() {
       default_model_id: defaultModelId.value || null,
       style_recommend: !!styleRecommend.value,
       custom_style: customStyle.value.trim(),
+      gif_frame_count: gifFrameCount.value,
+      gif_frame_duration_ms: gifFrameDurationMs.value,
     }
     const data: any = await apiPost('config/save', payload)
     // server returns normalized providers/options, keep client in sync
@@ -731,6 +763,8 @@ async function save() {
         defaultModelId: defaultModelId.value,
         styleRecommend: styleRecommend.value,
         customStyle: customStyle.value,
+        gifFrameCount: gifFrameCount.value,
+        gifFrameDurationMs: gifFrameDurationMs.value,
       })
     }
     message.success('已保存并即时生效')

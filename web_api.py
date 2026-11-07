@@ -70,6 +70,7 @@ class BrushAPI:
         providers, default_id = cfg.load_config(self.data_dir)
         options = cfg.derive_model_options(providers)
         style = cfg.load_style_config(self.data_dir)
+        gif_defaults = cfg.load_gif_defaults(self.data_dir)
         return _ok(
             {
                 "providers": providers,
@@ -78,6 +79,8 @@ class BrushAPI:
                 "templates": cfg.PROVIDER_TEMPLATES,
                 "style_recommend": style.get("style_recommend", False),
                 "custom_style": style.get("custom_style", ""),
+                "gif_frame_count": gif_defaults["frame_count"],
+                "gif_frame_duration_ms": gif_defaults["frame_duration_ms"],
             }
         )
 
@@ -97,6 +100,15 @@ class BrushAPI:
             default_id = None
         style_recommend = bool(payload.get("style_recommend"))
         custom_style = str(payload.get("custom_style") or "").strip()
+        # 动图默认参数（可选）
+        def _opt_int(v):
+            try:
+                return int(v) if v is not None and str(v).strip() != "" else None
+            except Exception:
+                return None
+
+        gif_frame_count = _opt_int(payload.get("gif_frame_count"))
+        gif_frame_duration_ms = _opt_int(payload.get("gif_frame_duration_ms"))
         try:
             cfg.save_config(
                 self.data_dir,
@@ -104,6 +116,8 @@ class BrushAPI:
                 default_id,
                 style_recommend=style_recommend,
                 custom_style=custom_style,
+                gif_frame_count=gif_frame_count,
+                gif_frame_duration_ms=gif_frame_duration_ms,
             )
         except Exception as e:
             logger.error(f"AngelBrush save failed: {e}", exc_info=True)
@@ -123,6 +137,8 @@ class BrushAPI:
                 "options": options,
                 "style_recommend": style_recommend,
                 "custom_style": custom_style,
+                "gif_frame_count": cfg.load_gif_defaults(self.data_dir)["frame_count"],
+                "gif_frame_duration_ms": cfg.load_gif_defaults(self.data_dir)["frame_duration_ms"],
             },
             "已保存",
         )

@@ -597,6 +597,13 @@ async def generate_images(
     http_client: httpx.AsyncClient | None = None,
 ) -> dict[str, Any]:
     req = _normalize_request(raw_request)
+    # 动图且未显式指定帧参数时，套用功能设置里的默认值（默认 16 帧 / 100ms 更流畅）
+    if str(req.get("output_format") or "").lower() == "gif":
+        gif_defaults = cfg.load_gif_defaults(data_dir)
+        if req.get("frame_count") is None:
+            req["frame_count"] = gif_defaults.get("frame_count")
+        if req.get("frame_duration_ms") is None:
+            req["frame_duration_ms"] = gif_defaults.get("frame_duration_ms")
     providers, default_id = cfg.load_config(data_dir)
     provider, model, eid = cfg.resolve_model(providers, default_id, req.get("model_id"))
     logger.info(

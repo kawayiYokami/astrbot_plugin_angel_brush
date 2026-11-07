@@ -329,20 +329,23 @@ def save_config(
     default_model_id: str | None,
     style_recommend: bool = False,
     custom_style: str = "",
+    gif_frame_count: int | None = None,
+    gif_frame_duration_ms: int | None = None,
 ) -> None:
     cfg_path = data_dir / "providers.json"
     cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    payload: dict[str, Any] = {
+        "providers": providers,
+        "default_model_id": default_model_id,
+        "style_recommend": bool(style_recommend),
+        "custom_style": str(custom_style or "").strip(),
+    }
+    if gif_frame_count is not None:
+        payload["gif_frame_count"] = max(2, min(16, int(gif_frame_count)))
+    if gif_frame_duration_ms is not None:
+        payload["gif_frame_duration_ms"] = max(20, min(2000, int(gif_frame_duration_ms)))
     cfg_path.write_text(
-        json.dumps(
-            {
-                "providers": providers,
-                "default_model_id": default_model_id,
-                "style_recommend": bool(style_recommend),
-                "custom_style": str(custom_style or "").strip(),
-            },
-            ensure_ascii=False,
-            indent=2,
-        ),
+        json.dumps(payload, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
 
@@ -427,6 +430,32 @@ def build_style_hint(
     if cus:
         parts.append(f"用户希望使用的画风：{cus}")
     return "；".join(parts)
+
+
+# 未配置时的动图默认值：16 帧 / 100ms（约 1.6s 循环，比官方默认 9帧/200ms 流畅得多）
+DEFAULT_GIF_FRAME_COUNT = 16
+DEFAULT_GIF_FRAME_DURATION_MS = 100
+
+
+def load_gif_defaults(data_dir: Path) -> dict[str, Any]:
+    """读取动图默认参数。未配置时返回内置默认（16 帧 / 100ms）。
+
+    Returns:
+        {"frame_count": int, "frame_duration_ms": int}，均已做范围钳制。
+    """
+    fc = DEFAULT_GIF_FRAME_COUNT
+    fd = DEFAULT_GIF_FRAME_DURATION_MS
+    cfg_path = data_dir / "providers.json"
+    if cfg_path.exists():
+        try:
+            raw = json.loads(cfg_path.read_text(encoding="utf-8"))
+            if raw.get("gif_frame_count") is not None:
+                fc = max(2, min(16, int(raw["gif_frame_count"])))
+            if raw.get("gif_frame_duration_ms") is not None:
+                fd = max(20, min(2000, int(raw["gif_frame_duration_ms"])))
+        except Exception:
+            pass
+    return {"frame_count": fc, "frame_duration_ms": fd}
 
 
 def model_supports_gif(model: dict[str, Any] | None) -> bool:
