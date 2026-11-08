@@ -236,6 +236,35 @@
                       <span class="hint">留空则不注入；与模型推荐可同时生效</span>
                     </template>
                   </n-form-item>
+
+                  <!-- 动图默认参数 -->
+                  <n-divider style="margin-top: 16px" />
+                  <div class="style-head">
+                    <span class="style-title">动图默认参数（对话生成 gif 时生效）</span>
+                  </div>
+                  <n-grid :cols="2" :x-gap="10" :y-gap="6">
+                    <n-gi>
+                      <n-form-item label="帧数 frame_count (2-16)">
+                        <n-input-number v-model:value="gifFrameCount" :min="2" :max="16" style="width: 100%" />
+                      </n-form-item>
+                    </n-gi>
+                    <n-gi>
+                      <n-form-item label="每帧时长 ms (20-2000)">
+                        <n-input-number v-model:value="gifFrameDurationMs" :min="20" :max="2000" :step="10" style="width: 100%" />
+                      </n-form-item>
+                    </n-gi>
+                  </n-grid>
+                  <n-form-item label="尺寸自动换算">
+                    <n-checkbox v-model:checked="gifAutoFit">
+                      按官方像素预算自动换算尺寸（推荐开启）
+                    </n-checkbox>
+                    <template #feedback>
+                      <span class="hint">开启后会把超预算的尺寸自动缩小并对齐 16 倍数；关闭则原样发送你填的尺寸，可能被上游拒绝或自行压缩。</span>
+                    </template>
+                  </n-form-item>
+                  <span class="hint" style="display:block;margin-top:-4px">
+                    帧数越多越流畅但生成更慢。默认 16 帧 / 100ms（约 1.6s 循环）；供应商默认只有 9 帧 / 200ms，会明显卡顿。
+                  </span>
                 </n-form>
                 <n-alert v-if="!modelOptions.length" type="warning" :show-icon="false" style="margin-top: 10px">还没有可用模型，请先在供应商设置中添加并启用供应商与模型</n-alert>
                 <div class="hint" style="margin-top: 8px">切换后自动保存并即时生效，无需再点右下角保存</div>
@@ -275,6 +304,11 @@
                       <n-gi><n-form-item label="质量 (quality)"><n-input v-model:value="genForm.quality" placeholder="如 medium / high" clearable /></n-form-item></n-gi>
                       <n-gi><n-form-item label="数量 n (1-4)"><n-input-number v-model:value="genForm.n" :min="1" :max="4" style="width: 100%" /></n-form-item></n-gi>
                       <n-gi><n-form-item label="seed"><n-input v-model:value="genForm.seed" placeholder="留空随机" clearable /></n-form-item></n-gi>
+                      <n-gi><n-form-item label="输出格式（gpt-image 支持）"><n-select v-model:value="genForm.output_format" :options="outputFormatOptions" placeholder="png" clearable /></n-form-item></n-gi>
+                    </n-grid>
+                    <n-grid v-if="genForm.output_format === 'gif'" :cols="2" :x-gap="10" :y-gap="6">
+                      <n-gi><n-form-item label="动图帧数 frame_count (2-16)"><n-input-number v-model:value="genForm.frame_count" :min="2" :max="16" style="width: 100%" /></n-form-item></n-gi>
+                      <n-gi><n-form-item label="每帧时长 frame_duration_ms (20-2000)"><n-input-number v-model:value="genForm.frame_duration_ms" :min="20" :max="2000" style="width: 100%" /></n-form-item></n-gi>
                     </n-grid>
                   </n-form>
                   <div class="test-actions">
@@ -354,6 +388,11 @@
                       <n-gi><n-form-item label="宽高比（不填按原图）"><n-input v-model:value="editForm.aspect_ratio" placeholder="如 16:9 / 1:1" clearable /></n-form-item></n-gi>
                       <n-gi><n-form-item label="质量 (quality)"><n-input v-model:value="editForm.quality" placeholder="如 medium" clearable /></n-form-item></n-gi>
                       <n-gi><n-form-item label="seed"><n-input v-model:value="editForm.seed" placeholder="留空随机" clearable /></n-form-item></n-gi>
+                      <n-gi><n-form-item label="输出格式（gpt-image 支持）"><n-select v-model:value="editForm.output_format" :options="outputFormatOptions" placeholder="png" clearable /></n-form-item></n-gi>
+                    </n-grid>
+                    <n-grid v-if="editForm.output_format === 'gif'" :cols="2" :x-gap="10" :y-gap="6">
+                      <n-gi><n-form-item label="动图帧数 frame_count (2-16)"><n-input-number v-model:value="editForm.frame_count" :min="2" :max="16" style="width: 100%" /></n-form-item></n-gi>
+                      <n-gi><n-form-item label="每帧时长 frame_duration_ms (20-2000)"><n-input-number v-model:value="editForm.frame_duration_ms" :min="20" :max="2000" style="width: 100%" /></n-form-item></n-gi>
                     </n-grid>
                   </n-form>
                   <n-alert v-if="!editImages.length" type="warning" :show-icon="false" style="margin-top: 6px">请先上传至少一张输入图片</n-alert>
@@ -500,6 +539,12 @@ const editResOptions = [
   { label: '1536（最短边 1536）', value: '1536' },
   { label: '2048（最短边 2048）', value: '2048' },
 ]
+const outputFormatOptions = [
+  { label: 'png', value: 'png' },
+  { label: 'jpeg', value: 'jpeg' },
+  { label: 'webp', value: 'webp' },
+  { label: 'gif（动图）', value: 'gif' },
+]
 
 interface Model {
   id: string
@@ -527,6 +572,10 @@ const providers = ref<Provider[]>([])
 const defaultModelId = ref<string | null>(null)
 const styleRecommend = ref(false)
 const customStyle = ref('')
+// 动图默认参数：对话/关键词生成 gif 时未显式指定就用这里的值
+const gifFrameCount = ref<number>(16)
+const gifFrameDurationMs = ref<number>(100)
+const gifAutoFit = ref(true)
 const templates = ref<Record<string, any>>({})
 const baseline = ref('')
 
@@ -578,6 +627,9 @@ const dirty = computed(() => {
     defaultModelId: defaultModelId.value,
     styleRecommend: styleRecommend.value,
     customStyle: customStyle.value,
+    gifFrameCount: gifFrameCount.value,
+    gifFrameDurationMs: gifFrameDurationMs.value,
+    gifAutoFit: gifAutoFit.value,
   })
   return cur !== baseline.value
 })
@@ -609,12 +661,18 @@ async function reload() {
     defaultModelId.value = data.default_model_id || null
     styleRecommend.value = !!data.style_recommend
     customStyle.value = data.custom_style || ''
+    gifFrameCount.value = Number(data.gif_frame_count) || 16
+    gifFrameDurationMs.value = Number(data.gif_frame_duration_ms) || 100
+    gifAutoFit.value = data.gif_auto_fit !== false
     templates.value = data.templates || {}
     baseline.value = JSON.stringify({
       providers: providers.value,
       defaultModelId: defaultModelId.value,
       styleRecommend: styleRecommend.value,
       customStyle: customStyle.value,
+      gifFrameCount: gifFrameCount.value,
+      gifFrameDurationMs: gifFrameDurationMs.value,
+      gifAutoFit: gifAutoFit.value,
     })
   } catch (e) {
     message.error(`加载失败: ${(e as Error).message}`)
@@ -703,6 +761,9 @@ async function save() {
       default_model_id: defaultModelId.value || null,
       style_recommend: !!styleRecommend.value,
       custom_style: customStyle.value.trim(),
+      gif_frame_count: gifFrameCount.value,
+      gif_frame_duration_ms: gifFrameDurationMs.value,
+      gif_auto_fit: gifAutoFit.value,
     }
     const data: any = await apiPost('config/save', payload)
     // server returns normalized providers/options, keep client in sync
@@ -715,6 +776,9 @@ async function save() {
         defaultModelId: defaultModelId.value,
         styleRecommend: styleRecommend.value,
         customStyle: customStyle.value,
+        gifFrameCount: gifFrameCount.value,
+        gifFrameDurationMs: gifFrameDurationMs.value,
+        gifAutoFit: gifAutoFit.value,
       })
     }
     message.success('已保存并即时生效')
@@ -756,6 +820,9 @@ const genForm = reactive({
   quality: '',
   n: 1 as number,
   seed: '' as string,
+  output_format: null as string | null,
+  frame_count: null as number | null,
+  frame_duration_ms: null as number | null,
 })
 const editForm = reactive({
   model_id: null as string | null,
@@ -765,6 +832,9 @@ const editForm = reactive({
   aspect_ratio: '',
   quality: '',
   seed: '' as string,
+  output_format: null as string | null,
+  frame_count: null as number | null,
+  frame_duration_ms: null as number | null,
 })
 const genTesting = ref(false)
 const genMsg = ref('')
@@ -833,6 +903,9 @@ async function doGenTest(mock: boolean) {
       n: genForm.n,
       seed: genForm.seed || undefined,
       model_id: genForm.model_id || undefined,
+      output_format: genForm.output_format || undefined,
+      frame_count: genForm.output_format === 'gif' ? (genForm.frame_count ?? undefined) : undefined,
+      frame_duration_ms: genForm.output_format === 'gif' ? (genForm.frame_duration_ms ?? undefined) : undefined,
       operation: 'generate',
       mock,
     }
@@ -869,6 +942,9 @@ async function doEditTest(mock: boolean) {
       negative_prompt: editForm.negative_prompt || undefined,
       seed: editForm.seed || undefined,
       model_id: editForm.model_id || undefined,
+      output_format: editForm.output_format || undefined,
+      frame_count: editForm.output_format === 'gif' ? (editForm.frame_count ?? undefined) : undefined,
+      frame_duration_ms: editForm.output_format === 'gif' ? (editForm.frame_duration_ms ?? undefined) : undefined,
       operation: 'edit',
       images: editImages.value.map((it) => it.dataUrl),
       mask: maskImage.value?.dataUrl || undefined,

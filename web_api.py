@@ -70,6 +70,7 @@ class BrushAPI:
         providers, default_id = cfg.load_config(self.data_dir)
         options = cfg.derive_model_options(providers)
         style = cfg.load_style_config(self.data_dir)
+        gif_defaults = cfg.load_gif_defaults(self.data_dir)
         return _ok(
             {
                 "providers": providers,
@@ -78,6 +79,9 @@ class BrushAPI:
                 "templates": cfg.PROVIDER_TEMPLATES,
                 "style_recommend": style.get("style_recommend", False),
                 "custom_style": style.get("custom_style", ""),
+                "gif_frame_count": gif_defaults["frame_count"],
+                "gif_frame_duration_ms": gif_defaults["frame_duration_ms"],
+                "gif_auto_fit": bool(cfg.load_gif_auto_fit(self.data_dir)),
             }
         )
 
@@ -97,6 +101,17 @@ class BrushAPI:
             default_id = None
         style_recommend = bool(payload.get("style_recommend"))
         custom_style = str(payload.get("custom_style") or "").strip()
+        # 动图默认参数（可选）
+        def _opt_int(v):
+            try:
+                return int(v) if v is not None and str(v).strip() != "" else None
+            except Exception:
+                return None
+
+        gif_frame_count = _opt_int(payload.get("gif_frame_count"))
+        gif_frame_duration_ms = _opt_int(payload.get("gif_frame_duration_ms"))
+        gif_auto_fit = payload.get("gif_auto_fit")
+        gif_auto_fit = bool(gif_auto_fit) if gif_auto_fit is not None else None
         try:
             cfg.save_config(
                 self.data_dir,
@@ -104,6 +119,9 @@ class BrushAPI:
                 default_id,
                 style_recommend=style_recommend,
                 custom_style=custom_style,
+                gif_frame_count=gif_frame_count,
+                gif_frame_duration_ms=gif_frame_duration_ms,
+                gif_auto_fit=gif_auto_fit,
             )
         except Exception as e:
             logger.error(f"AngelBrush save failed: {e}", exc_info=True)
@@ -123,6 +141,9 @@ class BrushAPI:
                 "options": options,
                 "style_recommend": style_recommend,
                 "custom_style": custom_style,
+                "gif_frame_count": cfg.load_gif_defaults(self.data_dir)["frame_count"],
+                "gif_frame_duration_ms": cfg.load_gif_defaults(self.data_dir)["frame_duration_ms"],
+                "gif_auto_fit": bool(cfg.load_gif_auto_fit(self.data_dir)),
             },
             "已保存",
         )
@@ -148,6 +169,11 @@ class BrushAPI:
         negative_prompt = (
             str(payload.get("negative_prompt") or "").strip() or None
         )
+        # 输出格式（openai gpt-image 支持 png/jpeg/webp/gif 动图）
+        output_format = str(payload.get("output_format") or "").strip() or None
+        # 动图参数（gif 时生效）
+        frame_count = payload.get("frame_count")
+        frame_duration_ms = payload.get("frame_duration_ms")
         model_id = str(payload.get("model_id") or "").strip() or None
         operation = str(payload.get("operation") or "").strip() or None
         # n / seed 需容错
@@ -190,6 +216,9 @@ class BrushAPI:
             "aspect_ratio": aspect_ratio,
             "quality": quality,
             "negative_prompt": negative_prompt,
+            "output_format": output_format,
+            "frame_count": frame_count,
+            "frame_duration_ms": frame_duration_ms,
             "n": n_val,
             "seed": seed_val,
             "model_id": model_id,

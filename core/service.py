@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import io
 from pathlib import Path
@@ -63,6 +64,9 @@ def _normalize_request(raw: dict[str, Any]) -> dict[str, Any]:
         "aspect_ratio": (str(raw.get("aspect_ratio") or "").strip() or None),
         "quality": (str(raw.get("quality") or "").strip() or None),
         "negative_prompt": (str(raw.get("negative_prompt") or "").strip() or None),
+        "output_format": (str(raw.get("output_format") or "").strip() or None),
+        "frame_count": raw.get("frame_count"),
+        "frame_duration_ms": raw.get("frame_duration_ms"),
         "n": n,
         "seed": raw.get("seed"),
         "images": images,
@@ -308,6 +312,17 @@ async def _download_remote(provider: dict[str, Any], api_key: str, url: str) -> 
         return data
 
 
+# 网络层可重试异常：中转/网关在动图长时间生成时可能提前断开连接
+_RETRYABLE_EXC = (
+    httpx.RemoteProtocolError,  # Server disconnected without sending a response
+    httpx.ConnectError,
+    httpx.ReadTimeout,
+    httpx.WriteTimeout,
+    httpx.ReadError,
+    httpx.WriteError,
+)
+
+
 async def _request_with_provider(
     provider: dict[str, Any],
     model: dict[str, Any],
@@ -540,12 +555,56 @@ async def _request_with_provider(
             await client.aclose()
 
 
+async def _request_with_retry(
+    provider: dict[str, Any],
+    model: dict[str, Any],
+    req: dict[str, Any],
+    edit_inputs: dict[str, Any],
+    http_client: httpx.AsyncClient | None = None,
+    attempts: int = 3,
+) -> tuple[list[dict[str, Any]], str | None]:
+    """带网络重试的供应商请求。
+
+    中转网关在动图等长耗时任务中会提前断开连接（实测约 40% 概率出现
+    ConnectError: TLS/SSL connection has been closed 或 RemoteProtocolError）。
+    这类错误重试即可恢复；HTTP 4xx 等用户错误不重试。
+    每次调用 _request_with_provider 都会新建 client，因此重试不会复用坏连接。
+    """
+    last: Exception | None = None
+    for i in range(max(1, attempts)):
+        try:
+            return await _request_with_provider(
+                provider, model, req, edit_inputs, http_client=http_client
+            )
+        except _RETRYABLE_EXC as e:
+            last = e
+            if i + 1 >= attempts:
+                break
+            logger.warning(
+                f"[天使的画笔] 请求网络中断（{type(e).__name__}: {e}），"
+                f"第 {i + 2}/{attempts} 次重试"
+            )
+            await asyncio.sleep(2 * (i + 1))
+    raise ValueError(
+        f"供应商连接反复中断（{type(last).__name__}: {last}）。"
+        f"动图等长耗时任务容易被中转网关提前断开，可减少帧数或稍后重试。"
+    ) from last
+
+
 async def generate_images(
     data_dir: Path,
     raw_request: dict[str, Any],
     http_client: httpx.AsyncClient | None = None,
 ) -> dict[str, Any]:
     req = _normalize_request(raw_request)
+    # 动图且未显式指定帧参数时，套用功能设置里的默认值（默认 16 帧 / 100ms 更流畅）
+    if str(req.get("output_format") or "").lower() == "gif":
+        gif_defaults = cfg.load_gif_defaults(data_dir)
+        if req.get("frame_count") is None:
+            req["frame_count"] = gif_defaults.get("frame_count")
+        if req.get("frame_duration_ms") is None:
+            req["frame_duration_ms"] = gif_defaults.get("frame_duration_ms")
+        req["gif_auto_fit"] = cfg.load_gif_auto_fit(data_dir)
     providers, default_id = cfg.load_config(data_dir)
     provider, model, eid = cfg.resolve_model(providers, default_id, req.get("model_id"))
     logger.info(
@@ -553,7 +612,7 @@ async def generate_images(
     )
     edit_inputs = await _load_edit_inputs(req)
     _resolve_edit_defaults(req, edit_inputs)
-    pending_list, provider_text = await _request_with_provider(
+    pending_list, provider_text = await _request_with_retry(
         provider, model, req, edit_inputs, http_client=http_client
     )
     assets: list[dict[str, Any]] = []

@@ -99,6 +99,57 @@ def openai_size_from_aspect(value: str, arbitrary: bool) -> str | None:
     return "1024x1024"
 
 
+# 官方口径：整个请求的总像素预算（含全部帧）655,360 ~ 8,294,400
+GIF_MAX_TOTAL_PIXELS = 8_294_400
+GIF_MIN_TOTAL_PIXELS = 655_360
+# 单边上限
+IMAGE_MAX_EDGE = 3840
+# 兜底帧数（官方默认 9）
+GIF_DEFAULT_FRAMES = 9
+
+
+def _align16_floor(v: int) -> int:
+    """向下对齐到 16 的倍数，最小 16。"""
+    return max(16, int(v) // 16 * 16)
+
+
+def fit_gif_frame_size(
+    w: int, h: int, frame_count: int, budget: int = GIF_MAX_TOTAL_PIXELS
+) -> tuple[int, int]:
+    """按总像素预算收缩动图每帧尺寸，返回 (w, h)。
+
+    官方约束：gif 的 size 描述"每一帧"的尺寸，且 frame_count × 单帧像素
+    不能超过整请求总像素预算，否则请求会被拒或由服务端自行压缩。
+    这里在客户端先等比缩到合法范围，宽高对齐 16 的倍数。
+
+    Args:
+        w: 期望帧宽
+        h: 期望帧高
+        frame_count: 帧数（>=1）
+        budget: 总像素上限，默认官方 8,294,400
+
+    Returns:
+        收缩并对齐后的 (宽, 高)，均为 16 的倍数。
+    """
+    frames = max(1, int(frame_count or 1))
+    per_frame = budget / frames
+    if int(w) <= 0 or int(h) <= 0:
+        return int(w), int(h)
+    # 无论是否超预算，宽高都必须是 16 的倍数（官方硬性要求），先向下对齐
+    tw, th = _align16_floor(max(16, int(w))), _align16_floor(max(16, int(h)))
+    if tw * th > per_frame:
+        scale = (per_frame / float(tw * th)) ** 0.5
+        tw = _align16_floor(max(32, int(tw * scale)))
+        th = _align16_floor(max(32, int(th * scale)))
+    # 对齐到 16 后可能仍略微超出（例如 960x544），逐档降边长直到合规
+    while tw * th > per_frame and tw > 64 and th > 64:
+        if tw >= th:
+            tw = _align16_floor(tw - 16)
+        else:
+            th = _align16_floor(th - 16)
+    return tw, th
+
+
 def append_endpoint(base_url: str, suffix: str) -> str:
     base = base_url.strip().rstrip("/")
     suffix = suffix.strip()
@@ -123,7 +174,27 @@ def openai_generation_payload(
     is_gpt = str(model.get("model") or "").strip().lower().startswith("gpt-image")
     arbitrary = str(model.get("model") or "").strip().lower().startswith("gpt-image-2")
     if is_gpt:
-        payload["output_format"] = "png"
+        # 输出格式：默认 png；gpt-image-2.6 起支持 gif 动图
+        out_fmt = _trim_opt(req.get("output_format")) or "png"
+        if out_fmt not in ("png", "jpeg", "webp", "gif"):
+            out_fmt = "png"
+        payload["output_format"] = out_fmt
+        # 动图参数：仅 gif 时生效（官方口径 frame_count 2–16 默认 9；frame_duration_ms 20–2000 默认 200）
+        if out_fmt == "gif":
+            fc = req.get("frame_count")
+            try:
+                fc = int(fc) if fc is not None and str(fc).strip() != "" else None
+            except Exception:
+                fc = None
+            if fc is not None:
+                payload["frame_count"] = max(2, min(16, fc))
+            fd = req.get("frame_duration_ms")
+            try:
+                fd = int(fd) if fd is not None and str(fd).strip() != "" else None
+            except Exception:
+                fd = None
+            if fd is not None:
+                payload["frame_duration_ms"] = max(20, min(2000, fd))
     else:
         payload["response_format"] = "b64_json"
 
@@ -142,6 +213,17 @@ def openai_generation_payload(
         )
     )
     if size:
+        # 动图：按总像素预算收缩每帧尺寸，避免 frame_count × 单帧像素超限
+        if req.get("gif_auto_fit", True) and str(payload.get("output_format") or "") == "gif":
+            parsed = parse_pixel_size(size)
+            if parsed:
+                frames = payload.get("frame_count") or GIF_DEFAULT_FRAMES
+                try:
+                    frames = int(frames)
+                except Exception:
+                    frames = GIF_DEFAULT_FRAMES
+                nw, nh = fit_gif_frame_size(parsed[0], parsed[1], frames)
+                size = f"{nw}x{nh}"
         payload["size"] = size
     q = effective_quality(req, model)
     if q:
@@ -338,7 +420,26 @@ def openai_edit_scalar_fields(
     mn = str(model.get("model") or "").lower()
     is_gpt = mn.startswith("gpt-image")
     if is_gpt:
-        fields.append(("output_format", "png"))
+        # 编辑同样支持 gif 动图（multipart 字段均为字符串）
+        out_fmt = _trim_opt(req.get("output_format")) or "png"
+        if out_fmt not in ("png", "jpeg", "webp", "gif"):
+            out_fmt = "png"
+        fields.append(("output_format", out_fmt))
+        if out_fmt == "gif":
+            fc = req.get("frame_count")
+            try:
+                fc = int(fc) if fc is not None and str(fc).strip() != "" else None
+            except Exception:
+                fc = None
+            if fc is not None:
+                fields.append(("frame_count", str(max(2, min(16, fc)))))
+            fd = req.get("frame_duration_ms")
+            try:
+                fd = int(fd) if fd is not None and str(fd).strip() != "" else None
+            except Exception:
+                fd = None
+            if fd is not None:
+                fields.append(("frame_duration_ms", str(max(20, min(2000, fd)))))
     else:
         fields.append(("response_format", "b64_json"))
     # 编辑：resolution=最短边 + aspect_ratio=比例，二者独立不拼 AxB 冲突；由 service 已按原图回退
@@ -382,6 +483,21 @@ def openai_edit_scalar_fields(
             arbitrary = mn.startswith("gpt-image-2")
             size = openai_size_from_aspect(aspect, arbitrary)
     if size:
+        # 动图：按总像素预算收缩每帧尺寸（multipart 同样适用）
+        if req.get("gif_auto_fit", True) and dict(fields).get("output_format") == "gif":
+            parsed = parse_pixel_size(size)
+            if parsed:
+                fc_val = req.get("frame_count")
+                try:
+                    fc_val = (
+                        int(fc_val)
+                        if fc_val is not None and str(fc_val).strip() != ""
+                        else GIF_DEFAULT_FRAMES
+                    )
+                except Exception:
+                    fc_val = GIF_DEFAULT_FRAMES
+                nw, nh = fit_gif_frame_size(parsed[0], parsed[1], fc_val)
+                size = f"{nw}x{nh}"
         fields.append(("size", size))
     q = effective_quality(req, model)
     if q:

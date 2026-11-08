@@ -47,6 +47,54 @@ def test_openai_payload():
     assert "size" in p2
     assert p2["size"]  # should be mapped from aspect
 
+def test_openai_payload_gif_animated():
+    """gpt-image 2.6 动图：output_format=gif + 帧参数，越界钳制/非法回落。"""
+    from astrbot_plugin_angel_brush.core import providers as prov
+
+    model = {"model": "gpt-image-2.6", "default_size": None}
+
+    # 默认 png，且不带动图参数
+    p = prov.openai_generation_payload({"prompt": "a cat"}, model)
+    assert p["output_format"] == "png"
+    assert "frame_count" not in p
+    assert "frame_duration_ms" not in p
+
+    # gif 动图显式参数
+    p2 = prov.openai_generation_payload(
+        {
+            "prompt": "a bouncing ball",
+            "output_format": "gif",
+            "frame_count": 12,
+            "frame_duration_ms": 250,
+        },
+        model,
+    )
+    assert p2["output_format"] == "gif"
+    assert p2["frame_count"] == 12
+    assert p2["frame_duration_ms"] == 250
+
+    # 越界钳制：frame_count 2-16，frame_duration_ms 20-2000
+    p3 = prov.openai_generation_payload(
+        {"prompt": "x", "output_format": "gif", "frame_count": 99, "frame_duration_ms": 1},
+        model,
+    )
+    assert p3["frame_count"] == 16
+    assert p3["frame_duration_ms"] == 20
+
+    # 非法 output_format 回落 png，且不泄漏帧参数
+    p4 = prov.openai_generation_payload({"prompt": "x", "output_format": "bogus"}, model)
+    assert p4["output_format"] == "png"
+    assert "frame_count" not in p4
+
+    # 老模型 gpt-image-1 行为不变
+    p5 = prov.openai_generation_payload(
+        {"prompt": "x", "size": "1024x1024"},
+        {"model": "gpt-image-1", "default_size": "512x512"},
+    )
+    assert p5["output_format"] == "png"
+    assert p5["size"] == "1024x1024"
+
+
 
 def test_xai_payload():
     from astrbot_plugin_angel_brush.core import providers as prov
@@ -334,3 +382,16 @@ async def test_mock_openai_url_response():
             {"data": [{"url": "https://example.com/img.png"}]}
         )
         assert pending[0]["remote_url"] == "https://example.com/img.png"
+
+
+def test_model_supports_gif():
+    """只有 gpt-image-2 系列支持 gif 动图。"""
+    from astrbot_plugin_angel_brush.core import config as cfg
+
+    assert cfg.model_supports_gif({"model": "gpt-image-2.6"}) is True
+    assert cfg.model_supports_gif({"model": "gpt-image-2"}) is True
+    assert cfg.model_supports_gif({"model": "gpt-image-1"}) is False
+    assert cfg.model_supports_gif({"model": "doubao-seedream-4-0"}) is False
+    assert cfg.model_supports_gif({"model": "gemini-3-pro-image-preview"}) is False
+    assert cfg.model_supports_gif(None) is False
+    assert cfg.model_supports_gif({}) is False

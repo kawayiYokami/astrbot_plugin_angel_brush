@@ -46,6 +46,54 @@ def update_tool_descriptions(
         _update_description(edit_tool, _EDIT_BASE_DESC, edit_tool.data_dir)
 
 
+async def collect_event_image_refs(event: Any) -> list[str]:
+    """从当前消息（含引用/回复的图）中提取图片，返回 service 可解析的引用。
+
+    LLM 无法得知用户"引用图片"的真实本地路径，若沿用模型自填的 images，
+    就会出现"改出来的图跟原图无关"。因此编辑类工具必须以消息里的真实图片为准：
+    优先本地绝对路径，否则统一转成 base64 data URL。
+
+    注意：QQ/OneBot 的"引用消息"在 AstrBot 里是 Reply 组件，被引用消息的内容
+    （含图片）挂在 Reply.chain 上，必须递归进去取；只看顶层 Image 是拿不到的。
+    """
+    if event is None:
+        return []
+    try:
+        comps = event.get_messages() or []
+    except Exception:
+        return []
+    try:
+        from astrbot.core.message.components import Image, Reply  # type: ignore
+    except Exception:
+        return []
+
+    # 引用消息里的图片优先（用户明确要改的就是那张），其次是本条消息自带的图
+    imgs: list[Any] = []
+    for c in comps:
+        if isinstance(c, Reply):
+            for rc in getattr(c, "chain", None) or []:
+                if isinstance(rc, Image):
+                    imgs.append(rc)
+    for c in comps:
+        if isinstance(c, Image):
+            imgs.append(c)
+
+    refs: list[str] = []
+    for c in imgs:
+        p = str(getattr(c, "path", "") or "").strip()
+        # 本地路径可能已被平台清理，失效时改走 base64，避免拿到死路径
+        if p and Path(p).exists():
+            refs.append(p)
+            continue
+        try:
+            b64 = await c.convert_to_base64()
+        except Exception:
+            b64 = ""
+        if b64:
+            refs.append(f"data:image/png;base64,{b64}")
+    return refs
+
+
 def _tool_success_value(result: dict[str, Any], prefix: str) -> str:
     images = result.get("images") or []
     image_lines = "\n".join(
@@ -87,6 +135,18 @@ class AngelImageGenerateTool(FunctionTool[AstrAgentContext]):
                     "type": "string",
                     "description": "分辨率，例如 1024x1024，默认 1920x1920。",
                 },
+                "output_format": {
+                    "type": "string",
+                    "description": "输出格式：png（默认）、jpeg、webp、gif（动图，需 gpt-image-2 系列模型）。用户要求动图/会动的图时传 gif。",
+                },
+                "frame_count": {
+                    "type": "integer",
+                    "description": "动图帧数 2-16，仅 output_format=gif 时生效；不填用供应商默认（9）。",
+                },
+                "frame_duration_ms": {
+                    "type": "integer",
+                    "description": "动图每帧时长（毫秒）20-2000，仅 output_format=gif 时生效；不填用默认 200。",
+                },
             },
             "required": ["prompt"],
             "additionalProperties": False,
@@ -106,9 +166,40 @@ class AngelImageGenerateTool(FunctionTool[AstrAgentContext]):
             pass
         prompt = str(kwargs.get("prompt") or "").strip()
         resolution = str(kwargs.get("resolution") or "").strip() or None
+        output_format = str(kwargs.get("output_format") or "").strip() or None
+        frame_count = kwargs.get("frame_count")
+        frame_duration_ms = kwargs.get("frame_duration_ms")
+        # 用户在消息里引用/发送了图片时，本质是改图请求；模型常会错调 generate，
+        # 这里自动切到 edit，保证引用的图片一定参与生成。
+        try:
+            event_refs = await collect_event_image_refs(
+                getattr(getattr(context, "context", None), "event", None)
+            )
+        except Exception:
+            event_refs = []
+        if event_refs:
+            result = await service.generate_images(
+                self.data_dir,
+                {
+                    "prompt": prompt,
+                    "operation": "edit",
+                    "images": event_refs,
+                    "output_format": output_format,
+                    "frame_count": frame_count,
+                    "frame_duration_ms": frame_duration_ms,
+                },
+            )
+            return _tool_success_value(result, "已按引用的图片完成编辑并保存到插件数据目录")
         result = await service.generate_images(
             self.data_dir,
-            {"prompt": prompt, "size": resolution, "operation": "generate"},
+            {
+                "prompt": prompt,
+                "size": resolution,
+                "operation": "generate",
+                "output_format": output_format,
+                "frame_count": frame_count,
+                "frame_duration_ms": frame_duration_ms,
+            },
         )
         return _tool_success_value(result, "图片已生成并保存到插件数据目录")
 
@@ -142,6 +233,18 @@ class AngelImageEditTool(FunctionTool[AstrAgentContext]):
                     "type": "string",
                     "description": "宽高比，例如 16:9、9:16、1:1、3:4，不填按原图比例。",
                 },
+                "output_format": {
+                    "type": "string",
+                    "description": "输出格式：png（默认）、jpeg、webp、gif。用户要求动图 / 让图动起来 / 做成 GIF 时传 gif（需 gpt-image-2 系列模型）。",
+                },
+                "frame_count": {
+                    "type": "integer",
+                    "description": "动图帧数 2-16，仅 output_format=gif 时生效；不填用供应商默认（9）。",
+                },
+                "frame_duration_ms": {
+                    "type": "integer",
+                    "description": "动图每帧时长（毫秒）20-2000，仅 output_format=gif 时生效；不填用默认 200。",
+                },
             },
             "required": ["prompt", "images"],
             "additionalProperties": False,
@@ -165,8 +268,20 @@ class AngelImageEditTool(FunctionTool[AstrAgentContext]):
         if isinstance(images, str):
             images = [images]
         images = [str(x).strip() for x in images if str(x).strip()]
+        # 用户在当前消息里引用/发送的图片才是真正的编辑对象，覆盖模型自填的 images
+        try:
+            event_refs = await collect_event_image_refs(
+                getattr(getattr(context, "context", None), "event", None)
+            )
+            if event_refs:
+                images = event_refs
+        except Exception:
+            pass
         resolution = str(kwargs.get("resolution") or "").strip() or None
         aspect_ratio = str(kwargs.get("aspect_ratio") or "").strip() or None
+        output_format = str(kwargs.get("output_format") or "").strip() or None
+        frame_count = kwargs.get("frame_count")
+        frame_duration_ms = kwargs.get("frame_duration_ms")
         result = await service.generate_images(
             self.data_dir,
             {
@@ -176,6 +291,9 @@ class AngelImageEditTool(FunctionTool[AstrAgentContext]):
                 "operation": "edit",
                 "resolution": resolution,
                 "aspect_ratio": aspect_ratio,
+                "output_format": output_format,
+                "frame_count": frame_count,
+                "frame_duration_ms": frame_duration_ms,
             },
         )
         return _tool_success_value(result, "图片已编辑并保存到插件数据目录")
