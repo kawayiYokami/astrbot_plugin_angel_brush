@@ -14,3 +14,8 @@ tags:
   - 画图
   - 图片生成
   - ComfyUI
+
+views:
+  - name: brush-config
+    title: 天使的画笔
+    description: 配置生图供应商、功能开关，并试画验证
