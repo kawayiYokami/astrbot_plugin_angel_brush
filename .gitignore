@@ -8,6 +8,9 @@ webui/node_modules/
 # Runtime data
 generated-images/
 
+# PAI 工作资产目录
+.pai/
+
 # OS / IDE
 .DS_Store
 Thumbs.db

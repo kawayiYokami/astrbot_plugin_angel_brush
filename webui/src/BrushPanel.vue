@@ -1,506 +1,737 @@
 <template>
-  <n-layout class="layout" has-sider>
-    <!-- 可变式侧边栏 -->
-    <n-layout-sider
-      width="240"
-      collapse-mode="width"
-      :collapsed-width="56"
-      show-trigger="bar"
-      :collapsed="collapsed"
-      @collapse="collapsed = true"
-      @expand="collapsed = false"
-    >
-      <div class="sider-inner" :class="{ collapsed }">
-        <div class="sider-header">
-          <button
-            class="theme-toggle"
-            type="button"
-            :title="isDark ? '切换到光模式' : '切换到暗模式'"
-            @click="toggleTheme()"
-          >
-            <Icon :icon="isDark ? 'lucide:sun' : 'lucide:moon'" />
-          </button>
-          <div v-if="!collapsed" class="brand">天使的画笔</div>
-        </div>
-        <n-scrollbar class="sider-scroll">
-          <n-menu
-            :value="activeKey"
-            :options="menuOptions"
-            :collapsed="collapsed"
-            :collapsed-width="56"
-            :collapsed-icon-size="20"
-            @update:value="onMenu"
-          />
-        </n-scrollbar>
-        <div v-if="!collapsed" class="sider-footer">
-          <span class="foot-hint">angel_image_generate / angel_image_edit</span>
-        </div>
+  <!-- 左侧：三个页签导航（240px，可折叠到 56px） -->
+  <v-navigation-drawer
+    :rail="rail"
+    permanent
+    width="240"
+    rail-width="56"
+    class="brush-drawer"
+    color="transparent"
+  >
+    <div class="d-flex flex-column h-100">
+      <div class="drawer-head pa-2" :class="rail ? 'd-flex flex-column align-center ga-2' : 'd-flex align-center ga-2'">
+        <v-btn
+          :icon="rail ? 'lucide:panel-left-open' : 'lucide:panel-left-close'"
+          variant="text"
+          size="small"
+          :aria-label="rail ? '展开侧栏' : '收起侧栏'"
+          @click="toggleRail"
+        />
+        <span v-if="!rail" class="text-subtitle-1 font-weight-medium flex-grow-1 text-truncate">天使的画笔</span>
       </div>
-    </n-layout-sider>
 
-    <n-layout-content class="content">
-      <n-scrollbar class="content-scroll">
-        <div class="content-inner">
-          <!-- 供应商设置 -->
-          <template v-if="activeKey === 'providers'">
-            <div class="content-header">
-              <h2>供应商设置</h2>
-              <div class="header-actions">
-                <n-button @click="reload">
-                  <template #icon><Icon icon="lucide:refresh-cw" /></template>
-                  刷新
-                </n-button>
-                <n-button type="primary" @click="addProvider">
-                  <template #icon><Icon icon="lucide:plus" /></template>
-                  供应商
-                </n-button>
-              </div>
-            </div>
-            <p class="content-sub">6 家协议 openai / xai / seedream / gemini / sensenova / comfyui，保存后即时生效</p>
+      <v-divider />
 
-            <n-spin v-if="loading" style="margin-top: 40px" />
-
-            <template v-else>
-              <n-empty v-if="!providers.length" description="还没有供应商，点击右上角新增" style="margin-top: 30px" />
-
-              <div v-for="(p, pIdx) in providers" :key="p.id" class="provider-card">
-                <div class="provider-head">
-                  <div class="provider-title">
-                    <Icon icon="lucide:server" class="inline-icon" />
-                    <span class="provider-name">{{ p.name || '未命名供应商' }}</span>
-                    <n-tag type="info">{{ p.provider_type }}</n-tag>
-                  </div>
-                  <div class="provider-actions">
-                    <n-switch v-model:value="p.enabled" />
-                    <n-popconfirm @positive-click="removeProvider(pIdx)">
-                      <template #trigger>
-                        <n-button quaternary circle type="error" title="删除供应商">
-                          <template #icon><Icon icon="lucide:trash-2" /></template>
-                        </n-button>
-                      </template>
-                      删除 {{ p.name || p.id }}？此操作需保存后生效
-                    </n-popconfirm>
-                  </div>
-                </div>
-
-                <n-grid :cols="2" :x-gap="12" :y-gap="10" responsive="screen" collapsed-rows="1">
-                  <n-gi>
-                    <n-form-item label="名称" :show-feedback="false" style="margin-bottom: 0">
-                      <n-input v-model:value="p.name" placeholder="如：OpenAI Images" />
-                    </n-form-item>
-                  </n-gi>
-                  <n-gi>
-                    <n-form-item label="类型" :show-feedback="false" style="margin-bottom: 0">
-                      <n-select v-model:value="p.provider_type" :options="kindOptions" />
-                    </n-form-item>
-                  </n-gi>
-                  <n-gi :span="2">
-                    <n-form-item label="Base URL" :show-feedback="false" style="margin-bottom: 0">
-                      <n-input v-model:value="p.base_url" placeholder="https://api.openai.com/v1" />
-                    </n-form-item>
-                  </n-gi>
-                  <n-gi>
-                    <n-form-item label="超时 (秒)" :show-feedback="false" style="margin-bottom: 0">
-                      <n-input-number v-model:value="p.timeout_seconds" :min="10" :max="600" :show-button="false" style="width: 140px" />
-                    </n-form-item>
-                  </n-gi>
-                  <n-gi>
-                    <n-form-item label="水印" :show-feedback="false" style="margin-bottom: 0">
-                      <n-switch v-model:value="p.watermark" />
-                    </n-form-item>
-                  </n-gi>
-                  <n-gi :span="2">
-                    <n-form-item label="API Keys" :show-feedback="false" style="margin-bottom: 0">
-                      <div class="key-row">
-                        <n-tag
-                          v-for="(k, ki) in p.api_keys"
-                          :key="ki"
-                         
-                          :bordered="false"
-                          closable
-                          @close="p.api_keys.splice(ki, 1)"
-                        >
-                          {{ maskKey(k) }}
-                        </n-tag>
-                        <n-input
-                          v-model:value="keyInput[p.id]"
-                          placeholder="sk-... 回车添加"
-                          style="width: 220px"
-                          clearable
-                          @keyup.enter="addKey(p)"
-                        />
-                      </div>
-                    </n-form-item>
-                    <div class="hint">支持多 key 轮询，空则不鉴权</div>
-                  </n-gi>
-                  <template v-if="p.provider_type === 'comfyui'">
-                    <n-gi :span="2">
-                      <n-form-item label="ComfyUI Workflow JSON" :show-feedback="false" style="margin-bottom: 0">
-                        <n-input v-model:value="p.comfyui_workflow_json" type="textarea" :autosize="{ minRows: 3 }" placeholder='{"prompt":...}' />
-                      </n-form-item>
-                    </n-gi>
-                  </template>
-                </n-grid>
-
-                <div class="models-head">
-                  <span class="models-title"><Icon icon="lucide:layers" class="inline-icon" /> 模型 ({{ p.models.length }})</span>
-                  <n-button size="tiny" @click="addModel(p)">
-                    <template #icon><Icon icon="lucide:plus" /></template>
-                    模型
-                  </n-button>
-                </div>
-
-                <div v-if="!p.models.length" class="model-empty">该供应商还没有模型</div>
-                <div v-for="(m, mIdx) in p.models" :key="m.id" class="model-card">
-                  <div class="model-head">
-                    <span class="model-name">{{ m.name || m.model }}</span>
-                    <n-switch v-model:value="m.enabled" style="margin-left: auto" />
-                    <n-popconfirm @positive-click="removeModel(p, mIdx)">
-                      <template #trigger>
-                        <n-button size="tiny" quaternary circle type="error">
-                          <template #icon><Icon icon="lucide:x" /></template>
-                        </n-button>
-                      </template>
-                      删除模型 {{ m.name || m.model }}？
-                    </n-popconfirm>
-                  </div>
-                  <n-grid :cols="2" :x-gap="10" :y-gap="8">
-                    <n-gi>
-                      <n-form-item label="显示名" :show-feedback="false" style="margin-bottom: 0">
-                        <n-input v-model:value="m.name" placeholder="如：GPT Image 1" />
-                      </n-form-item>
-                    </n-gi>
-                    <n-gi>
-                      <n-form-item label="模型名" :show-feedback="false" style="margin-bottom: 0">
-                        <n-input
-                          :value="m.model"
-                          placeholder="如：gpt-image-1"
-                         
-                          @update:value="(v: string) => onModelNameChange(p, m, v)"
-                        />
-                      </n-form-item>
-                    </n-gi>
-                  </n-grid>
-                </div>
-              </div>
-
-            </template>
+      <v-list class="flex-grow-1 overflow-y-auto py-2" nav bg-color="transparent">
+        <v-list-item
+          v-for="item in navItems"
+          :key="item.key"
+          :active="activeKey === item.key"
+          color="primary"
+          @click="onNav(item.key)"
+        >
+          <template #prepend>
+            <v-icon :icon="item.icon" />
           </template>
+          <v-list-item-title v-if="!rail">{{ item.label }}</v-list-item-title>
+          <v-tooltip v-if="rail" activator="parent" location="end">{{ item.label }}</v-tooltip>
+        </v-list-item>
+      </v-list>
+    </div>
+  </v-navigation-drawer>
 
-          <!-- 功能设置：仅保留生图模型供应商选择下拉 -->
-          <template v-else-if="activeKey === 'settings'">
-            <div class="content-header">
-              <h2>功能设置</h2>
-            </div>
-
-            <n-spin v-if="loading" style="margin-top: 40px" />
-            <template v-else>
-              <n-card class="setting-card">
-                <n-form label-placement="top">
-                  <n-form-item label="生图模型">
-                    <n-select
-                      v-model:value="defaultModelId"
-                      :options="modelOptions"
-                      placeholder="请选择生图模型"
-                      clearable
-                     
-                      @update:value="onDefaultModelChange"
-                    />
-                  </n-form-item>
-
-                  <!-- 画风注入：勾选叠加，非互斥 -->
-                  <n-divider style="margin-top: 16px" />
-                  <div class="style-head">
-                    <span class="style-title">画风注入（写入工具说明，LLM 每次调用可见）</span>
-                  </div>
-                  <n-form-item label="按模型推荐画风">
-                    <n-checkbox v-model:checked="styleRecommend" @update:checked="onStyleChange">
-                      使用当前模型擅长的画风
-                    </n-checkbox>
-                    <template #feedback>
-                      <span v-if="defaultModelId && currentModelStyle" class="hint">{{ defaultModelId.split('::')[0] }} → {{ currentModelStyle }}</span>
-                      <span v-else-if="defaultModelId && !currentModelStyle" class="hint warn">当前模型没有内置画风词条，仅勾选也不注入</span>
-                      <span v-else class="hint">选择生图模型后，这里会显示该模型擅长的画风</span>
-                    </template>
-                  </n-form-item>
-                  <n-form-item label="自定义画风">
-                    <n-input
-                      v-model:value="customStyle"
-                      type="textarea"
-                      :autosize="{ minRows: 1, maxRows: 3 }"
-                      placeholder="如：多画赛璐璐动画风、色彩明亮干净，可叠加模型推荐一起生效"
-                     
-                      @update:value="onStyleChange"
-                    />
-                    <template #feedback>
-                      <span class="hint">留空则不注入；与模型推荐可同时生效</span>
-                    </template>
-                  </n-form-item>
-                </n-form>
-                <n-alert v-if="!modelOptions.length" type="warning" :show-icon="false" style="margin-top: 10px">还没有可用模型，请先在供应商设置中添加并启用供应商与模型</n-alert>
-                <div class="hint" style="margin-top: 8px">切换后自动保存并即时生效，无需再点右下角保存</div>
-              </n-card>
-            </template>
-          </template>
-
-          <!-- 工具测试：两工具全参数透传，编辑支持本地上传 -->
-          <template v-else>
-            <div class="content-header">
-              <h2>工具测试</h2>
-              <n-button @click="refreshGenerated">
-                <template #icon><Icon icon="lucide:refresh-cw" /></template>
-                刷新已生成
-              </n-button>
-            </div>
-            <p class="content-sub">不依赖 LLM，直接调用本地调度与落盘链路。两工具全参数透传，编辑支持本地图片上传（转 data URL 直调）</p>
-
-            <n-tabs type="line" animated :value="toolTab" @update:value="(v: string) => toolTab = v as any">
-              <!-- 生图 -->
-              <n-tab-pane name="generate" tab="angel_image_generate">
-                <n-card class="setting-card">
-                  <n-form label-placement="top">
-                    <n-form-item label="生图模型（留空则用功能设置中的默认）">
-                      <n-select v-model:value="genForm.model_id" :options="modelOptionsWithDefault" placeholder="默认模型" clearable />
-                    </n-form-item>
-                    <n-form-item label="prompt *">
-                      <n-input v-model:value="genForm.prompt" type="textarea" :autosize="{ minRows: 2, maxRows: 5 }" placeholder="a cute cat sitting on a cloud, anime style" />
-                    </n-form-item>
-                    <n-form-item label="negative_prompt">
-                      <n-input v-model:value="genForm.negative_prompt" type="textarea" :autosize="{ minRows: 1, maxRows: 3 }" placeholder="不希望出现的内容" />
-                    </n-form-item>
-                    <n-grid :cols="2" :x-gap="10" :y-gap="6">
-                      <n-gi><n-form-item label="分辨率 (size / resolution)"><n-input v-model:value="genForm.size" placeholder="1024x1024" clearable /></n-form-item></n-gi>
-                      <n-gi><n-form-item label="快捷尺寸"><n-select v-model:value="genForm.size" :options="resOptions" placeholder="选择预设" clearable /></n-form-item></n-gi>
-                      <n-gi><n-form-item label="宽高比 (aspect_ratio)"><n-input v-model:value="genForm.aspect_ratio" placeholder="如 16:9 / 1:1" clearable /></n-form-item></n-gi>
-                      <n-gi><n-form-item label="质量 (quality)"><n-input v-model:value="genForm.quality" placeholder="如 medium / high" clearable /></n-form-item></n-gi>
-                      <n-gi><n-form-item label="数量 n (1-4)"><n-input-number v-model:value="genForm.n" :min="1" :max="4" style="width: 100%" /></n-form-item></n-gi>
-                      <n-gi><n-form-item label="seed"><n-input v-model:value="genForm.seed" placeholder="留空随机" clearable /></n-form-item></n-gi>
-                    </n-grid>
-                  </n-form>
-                  <div class="test-actions">
-                    <n-button type="primary" :loading="genTesting" @click="doGenTest(true)">
-                      <template #icon><Icon icon="lucide:flask-conical" /></template>
-                      Mock 生成
-                    </n-button>
-                    <n-button :loading="genTesting" @click="doGenTest(false)">
-                      <template #icon><Icon icon="lucide:sparkles" /></template>
-                      真实生成
-                    </n-button>
-                    <span v-if="genMsg" class="hint">{{ genMsg }}</span>
-                  </div>
-                  <div v-if="genPreviews.length" class="test-previews">
-                    <div v-for="(p, idx) in genPreviews" :key="idx" class="test-preview">
-                      <img :src="p.src" alt="preview" />
-                      <div v-if="p.markdown" class="preview-md">{{ p.markdown }}</div>
-                    </div>
-                  </div>
-                </n-card>
-              </n-tab-pane>
-
-              <!-- 编辑 -->
-              <n-tab-pane name="edit" tab="angel_image_edit">
-                <n-card class="setting-card">
-                  <n-form label-placement="top">
-                    <n-form-item label="生图模型（留空则用默认）">
-                      <n-select v-model:value="editForm.model_id" :options="modelOptionsWithDefault" placeholder="默认模型" clearable />
-                    </n-form-item>
-                    <n-form-item label="prompt *">
-                      <n-input v-model:value="editForm.prompt" type="textarea" :autosize="{ minRows: 2, maxRows: 5 }" placeholder="把背景换成海边日落，保留主体" />
-                    </n-form-item>
-                    <n-form-item label="negative_prompt">
-                      <n-input v-model:value="editForm.negative_prompt" type="textarea" :autosize="{ minRows: 1, maxRows: 3 }" placeholder="不希望出现的内容" />
-                    </n-form-item>
-                    <n-form-item label="输入图片 images *（可多选，支持多图融合）">
-                      <div class="upload-area">
-                        <input ref="editFileInput" type="file" accept="image/*" multiple style="display:none" @change="onEditFiles" />
-                        <n-button @click="triggerEditPick">
-                          <template #icon><Icon icon="lucide:upload" /></template>
-                          选择图片
-                        </n-button>
-                        <span class="hint" style="margin-left:8px">{{ editImages.length }} 张已选（最多 16）</span>
-                        <n-button v-if="editImages.length" size="tiny" quaternary style="margin-left:8px" @click="clearEditImages">清空</n-button>
-                      </div>
-                      <div v-if="editImages.length" class="upload-grid">
-                        <div v-for="(it, idx) in editImages" :key="idx" class="upload-thumb">
-                          <img :src="it.dataUrl" :alt="it.name" />
-                          <div class="upload-thumb-bar">
-                            <span class="upload-thumb-name" :title="it.name">{{ it.name }}</span>
-                            <n-button size="tiny" quaternary circle type="error" @click="removeEditImage(idx)">
-                              <template #icon><Icon icon="lucide:x" /></template>
-                            </n-button>
-                          </div>
-                        </div>
-                      </div>
-                    </n-form-item>
-                    <n-form-item label="mask（可选，白色区域为可编辑区）">
-                      <div class="upload-area">
-                        <input ref="maskFileInput" type="file" accept="image/*" style="display:none" @change="onMaskFile" />
-                        <n-button @click="triggerMaskPick">
-                          <template #icon><Icon icon="lucide:upload" /></template>
-                          选择 mask
-                        </n-button>
-                        <span v-if="maskImage" class="hint" style="margin-left:8px">{{ maskImage.name }}</span>
-                        <n-button v-if="maskImage" size="tiny" quaternary style="margin-left:8px" @click="clearMask">移除</n-button>
-                      </div>
-                      <div v-if="maskImage" class="upload-grid">
-                        <div class="upload-thumb">
-                          <img :src="maskImage.dataUrl" :alt="maskImage.name" />
-                        </div>
-                      </div>
-                    </n-form-item>
-                    <n-grid :cols="2" :x-gap="10" :y-gap="6">
-                      <n-gi><n-form-item label="分辨率（最短边，不填按原图）"><n-input v-model:value="editForm.size" placeholder="如 1024" clearable /></n-form-item></n-gi>
-                      <n-gi><n-form-item label="快捷分辨率"><n-select v-model:value="editForm.size" :options="editResOptions" placeholder="选择预设" clearable /></n-form-item></n-gi>
-                      <n-gi><n-form-item label="宽高比（不填按原图）"><n-input v-model:value="editForm.aspect_ratio" placeholder="如 16:9 / 1:1" clearable /></n-form-item></n-gi>
-                      <n-gi><n-form-item label="质量 (quality)"><n-input v-model:value="editForm.quality" placeholder="如 medium" clearable /></n-form-item></n-gi>
-                      <n-gi><n-form-item label="seed"><n-input v-model:value="editForm.seed" placeholder="留空随机" clearable /></n-form-item></n-gi>
-                    </n-grid>
-                  </n-form>
-                  <n-alert v-if="!editImages.length" type="warning" :show-icon="false" style="margin-top: 6px">请先上传至少一张输入图片</n-alert>
-                  <div class="test-actions" style="margin-top: 10px">
-                    <n-button type="primary" :loading="editTesting" @click="doEditTest(true)">
-                      <template #icon><Icon icon="lucide:flask-conical" /></template>
-                      Mock 编辑
-                    </n-button>
-                    <n-button :loading="editTesting" @click="doEditTest(false)">
-                      <template #icon><Icon icon="lucide:sparkles" /></template>
-                      真实编辑
-                    </n-button>
-                    <span v-if="editMsg" class="hint">{{ editMsg }}</span>
-                  </div>
-                  <div v-if="editPreviews.length" class="test-previews">
-                    <div v-for="(p, idx) in editPreviews" :key="idx" class="test-preview">
-                      <img :src="p.src" alt="preview" />
-                      <div v-if="p.markdown" class="preview-md">{{ p.markdown }}</div>
-                    </div>
-                  </div>
-                </n-card>
-              </n-tab-pane>
-            </n-tabs>
-
-            <div class="gen-head">
-              <span class="gen-title"><Icon icon="lucide:images" class="inline-icon" /> 已生成（最近 40 张）</span>
-              <span class="hint">{{ generated.length }} 张</span>
-            </div>
-            <n-spin v-if="genLoading" />
-            <n-empty v-else-if="!generated.length" description="还没有生成记录" />
-            <div v-else class="img-grid">
-              <div v-for="it in generated" :key="it.relative_path" class="img-card" @click="openImage(it)">
-                <img v-if="thumbMap[it.relative_path]" :src="thumbMap[it.relative_path]" :alt="it.name" loading="lazy" />
-                <div v-else class="img-placeholder"><Icon icon="lucide:image" /></div>
-                <div class="img-cap">
-                  <span class="img-name">{{ it.name }}</span>
-                  <span class="img-date">{{ it.date }}</span>
-                </div>
-              </div>
-            </div>
-          </template>
+  <v-main>
+    <div class="content-inner">
+      <!-- ========== 供应商设置 ========== -->
+      <template v-if="activeKey === 'providers'">
+        <div class="content-header">
+          <div>
+            <h2 class="text-h4 mb-0">供应商设置</h2>
+            <p class="content-sub text-caption text-medium-emphasis mb-0">
+              6 家协议 openai / xai / seedream / gemini / sensenova / comfyui，保存后即时生效
+            </p>
+          </div>
+          <div class="d-flex align-center ga-2">
+            <v-btn variant="text" prepend-icon="lucide:rotate-ccw" :loading="loading" @click="reload">刷新</v-btn>
+            <v-btn color="primary" variant="flat" prepend-icon="lucide:plus" @click="addProvider">供应商</v-btn>
+          </div>
         </div>
-      </n-scrollbar>
-    </n-layout-content>
 
-    <!-- 悬浮保存 -->
+        <div v-if="loading" class="d-flex justify-center py-12">
+          <v-progress-circular indeterminate color="primary" />
+        </div>
+
+        <v-empty-state
+          v-else-if="!providers.length"
+          icon="lucide:server"
+          title="还没有供应商"
+          text="点上方「供应商」新增第一个"
+        />
+
+        <template v-else>
+          <v-card
+            v-for="(p, pIdx) in providers"
+            :key="p.id"
+            rounded="md"
+            style="margin-bottom: 16px; padding-bottom: 8px;"
+            class="provider-card"
+          >
+            <v-card-text class="config-section" style="padding-bottom: 8px;">
+              <div class="d-flex align-center ga-3">
+                <v-icon icon="lucide:server" size="small" class="flex-shrink-0" />
+                <div class="flex-grow-1 min-w-0">
+                  <v-list-item-title class="config-title text-truncate">{{ p.name || '未命名供应商' }}</v-list-item-title>
+                  <v-list-item-subtitle class="config-hint">{{ p.provider_type }} · {{ p.models.length }} 个模型</v-list-item-subtitle>
+                </div>
+                <v-switch v-model="p.enabled" color="primary" hide-details density="compact" inset :aria-label="'启用 ' + (p.name || p.id)" />
+                <v-btn
+                  variant="text"
+                  size="small"
+                  icon="lucide:trash-2"
+                  color="error"
+                  :aria-label="'删除供应商 ' + (p.name || p.id)"
+                  @click="confirmRemoveProvider(pIdx)"
+                />
+              </div>
+            </v-card-text>
+
+            <div class="object-config">
+              <div class="config-item">
+              <v-row class="config-row">
+                <v-col cols="12" sm="6" class="property-info">
+                  <v-list-item density="compact">
+                    <v-list-item-title class="property-name">名称</v-list-item-title>
+                    <v-list-item-subtitle class="property-hint">如：OpenAI Images</v-list-item-subtitle>
+                  </v-list-item>
+                </v-col>
+                <v-col cols="12" sm="6" class="config-input">
+                  <v-text-field v-model="p.name" variant="outlined" density="compact" hide-details class="config-field" />
+                </v-col>
+              </v-row>
+
+              <v-divider class="config-divider" />
+
+              <v-row class="config-row">
+                <v-col cols="12" sm="6" class="property-info">
+                  <v-list-item density="compact">
+                    <v-list-item-title class="property-name">类型</v-list-item-title>
+                    <v-list-item-subtitle class="property-hint">选择供应商协议类型</v-list-item-subtitle>
+                  </v-list-item>
+                </v-col>
+                <v-col cols="12" sm="6" class="config-input">
+                  <v-select v-model="p.provider_type" variant="outlined" density="compact" :items="kindOptions" hide-details class="config-field" />
+                </v-col>
+              </v-row>
+
+              <v-divider class="config-divider" />
+
+              <v-row class="config-row">
+                <v-col cols="12" sm="6" class="property-info">
+                  <v-list-item density="compact">
+                    <v-list-item-title class="property-name">Base URL</v-list-item-title>
+                    <v-list-item-subtitle class="property-hint">如：https://api.openai.com/v1</v-list-item-subtitle>
+                  </v-list-item>
+                </v-col>
+                <v-col cols="12" sm="6" class="config-input">
+                  <v-text-field v-model="p.base_url" variant="outlined" density="compact" hide-details class="config-field" />
+                </v-col>
+              </v-row>
+
+              <v-divider class="config-divider" />
+
+              <v-row class="config-row">
+                <v-col cols="12" sm="6" class="property-info">
+                  <v-list-item density="compact">
+                    <v-list-item-title class="property-name">超时（秒）</v-list-item-title>
+                    <v-list-item-subtitle class="property-hint">取值 10–600 秒</v-list-item-subtitle>
+                  </v-list-item>
+                </v-col>
+                <v-col cols="12" sm="6" class="config-input">
+                  <v-text-field
+                    v-model.number="p.timeout_seconds"
+                    variant="outlined"
+                    density="compact"
+                    type="number"
+                    :min="10"
+                    :max="600"
+                    hide-details
+                    class="config-field"
+                  />
+                </v-col>
+              </v-row>
+
+              <v-divider class="config-divider" />
+
+              <v-row class="config-row">
+                <v-col cols="12" sm="6" class="property-info">
+                  <v-list-item density="compact">
+                    <v-list-item-title class="property-name">水印</v-list-item-title>
+                    <v-list-item-subtitle class="property-hint">是否在生成图片角落添加水印标识</v-list-item-subtitle>
+                  </v-list-item>
+                </v-col>
+                <v-col cols="12" sm="6" class="config-input">
+                  <v-switch v-model="p.watermark" color="primary" hide-details density="compact" inset />
+                </v-col>
+              </v-row>
+
+              <v-divider class="config-divider" />
+
+              <v-row class="config-row">
+                <v-col cols="12" sm="6" class="property-info">
+                  <v-list-item density="compact">
+                    <v-list-item-title class="property-name">API Keys</v-list-item-title>
+                    <v-list-item-subtitle class="property-hint">支持多 key 轮询，回车添加；留空则不鉴权；聚焦时显示明文便于编辑</v-list-item-subtitle>
+                  </v-list-item>
+                </v-col>
+                <v-col cols="12" sm="6" class="config-input">
+                  <v-combobox
+                    v-model="p.api_keys"
+                    variant="outlined"
+                    density="compact"
+                    multiple
+                    chips
+                    closable-chips
+                    hide-details
+                    class="config-field"
+                    @update:focused="(v: boolean) => keysFocus[p.id] = v"
+                  >
+                    <template #chip="{ item, props: chipProps }">
+                      <v-chip v-bind="chipProps" size="small">
+                        {{ keysFocus[p.id] ? String(item.title ?? '') : maskKey(String(item.title ?? '')) }}
+                      </v-chip>
+                    </template>
+                  </v-combobox>
+                </v-col>
+              </v-row>
+
+              <template v-if="p.provider_type === 'comfyui'">
+                <v-divider class="config-divider" />
+                <v-row class="config-row">
+                  <v-col cols="12" class="property-info">
+                    <v-list-item density="compact">
+                      <v-list-item-title class="property-name">ComfyUI Workflow JSON</v-list-item-title>
+                      <v-list-item-subtitle class="property-hint">如：{"prompt": ...}</v-list-item-subtitle>
+                    </v-list-item>
+                  </v-col>
+                  <v-col cols="12" class="config-input">
+                    <v-textarea
+                      v-model="p.comfyui_workflow_json"
+                      variant="outlined"
+                      rows="3"
+                      hide-details
+                      class="config-field"
+                    />
+                  </v-col>
+                </v-row>
+              </template>
+
+              <v-divider class="config-divider" />
+
+              <div class="model-block">
+              <div class="d-flex align-center ga-2 mt-4 mb-2">
+                <span class="text-subtitle-2 font-weight-medium d-flex align-center ga-2">
+                  <v-icon icon="lucide:layers" size="small" /> 模型 ({{ p.models.length }})
+                </span>
+                <v-spacer />
+                <v-btn variant="text" size="small" prepend-icon="lucide:plus" @click="addModel(p)">模型</v-btn>
+              </div>
+
+              <v-empty-state
+                v-if="!p.models.length"
+                icon="lucide:layers"
+                title="该供应商还没有模型"
+                density="compact"
+              />
+
+              <v-card
+                v-for="(m, mIdx) in p.models"
+                :key="m.id"
+                variant="tonal"
+                rounded="control"
+                class="model-card mb-2"
+              >
+                <div class="d-flex align-center ga-2 px-3 pt-2">
+                  <span class="text-body-2 font-weight-medium text-truncate">{{ m.name || m.model }}</span>
+                  <v-spacer />
+                  <v-switch v-model="m.enabled" color="primary" hide-details density="compact" :aria-label="'启用模型 ' + (m.name || m.model)" />
+                  <v-btn
+                    variant="text"
+                    size="small"
+                    icon="lucide:x"
+                    :aria-label="'删除模型 ' + (m.name || m.model)"
+                    @click="confirmRemoveModel(p, mIdx)"
+                  />
+                </div>
+                <v-card-text class="px-3 pb-3 pt-1">
+                  <v-row class="config-row">
+                    <v-col cols="12" sm="6" class="property-info">
+                      <v-list-item density="compact">
+                        <v-list-item-title class="property-name">显示名</v-list-item-title>
+                        <v-list-item-subtitle class="property-hint">如：GPT Image 1</v-list-item-subtitle>
+                      </v-list-item>
+                    </v-col>
+                    <v-col cols="12" sm="6" class="config-input">
+                      <v-text-field v-model="m.name" variant="outlined" density="compact" hide-details class="config-field" />
+                    </v-col>
+                  </v-row>
+                  <v-row class="config-row">
+                    <v-col cols="12" sm="6" class="property-info">
+                      <v-list-item density="compact">
+                        <v-list-item-title class="property-name">模型名</v-list-item-title>
+                        <v-list-item-subtitle class="property-hint">如：gpt-image-1</v-list-item-subtitle>
+                      </v-list-item>
+                    </v-col>
+                    <v-col cols="12" sm="6" class="config-input">
+                      <v-text-field
+                        :model-value="m.model"
+                        variant="outlined"
+                        density="compact"
+                        hide-details
+                        class="config-field"
+                        @update:model-value="(v: string) => onModelNameChange(p, m, v)"
+                      />
+                    </v-col>
+                  </v-row>
+                </v-card-text>
+              </v-card>
+              </div>
+              </div>
+            </div>
+          </v-card>
+        </template>
+      </template>
+
+      <!-- ========== 功能设置 ========== -->
+      <template v-else-if="activeKey === 'settings'">
+        <div class="content-header mb-4">
+          <h2 class="text-h4 mb-0">功能设置</h2>
+        </div>
+
+        <div v-if="loading" class="d-flex justify-center py-12">
+          <v-progress-circular indeterminate color="primary" />
+        </div>
+
+        <v-card v-else rounded="md" style="margin-bottom: 16px; padding-bottom: 8px;" class="setting-card">
+          <div class="object-config pt-2">
+            <div class="config-item">
+              <v-row class="config-row">
+                <v-col cols="12" sm="6" class="property-info">
+                  <v-list-item density="compact">
+                    <v-list-item-title class="property-name">生图模型</v-list-item-title>
+                    <v-list-item-subtitle class="property-hint">选择默认使用的生图模型，切换后自动保存并即时生效</v-list-item-subtitle>
+                  </v-list-item>
+                </v-col>
+                <v-col cols="12" sm="6" class="config-input">
+                  <v-select
+                    v-model="defaultModelId"
+                    variant="outlined"
+                    density="compact"
+                    :items="modelOptions"
+                    clearable
+                    hide-details
+                    class="config-field"
+                    @update:model-value="onDefaultModelChange"
+                  />
+                </v-col>
+              </v-row>
+
+              <v-divider class="config-divider" />
+
+              <v-row class="config-row">
+                <v-col cols="12" sm="6" class="property-info">
+                  <v-list-item density="compact">
+                    <v-list-item-title class="property-name">按模型推荐画风</v-list-item-title>
+                    <v-list-item-subtitle class="property-hint">
+                      <template v-if="defaultModelId && currentModelStyle">
+                        {{ defaultModelId.split('::')[0] }} → {{ currentModelStyle }}
+                      </template>
+                      <template v-else-if="defaultModelId">
+                        当前模型没有内置画风词条，仅勾选也不注入
+                      </template>
+                      <template v-else>
+                        选择生图模型后，这里会显示该模型擅长的画风
+                      </template>
+                    </v-list-item-subtitle>
+                  </v-list-item>
+                </v-col>
+                <v-col cols="12" sm="6" class="config-input">
+                  <v-switch
+                    v-model="styleRecommend"
+                    color="primary"
+                    hide-details
+                    density="compact"
+                    inset
+                    @update:model-value="onStyleChange"
+                  />
+                </v-col>
+              </v-row>
+
+              <v-divider class="config-divider" />
+
+              <v-row class="config-row">
+                <v-col cols="12" class="property-info">
+                  <v-list-item density="compact">
+                    <v-list-item-title class="property-name">自定义画风</v-list-item-title>
+                    <v-list-item-subtitle class="property-hint">画风偏好（会跟着每次生成一起提交）；留空则不加；可与模型推荐叠加</v-list-item-subtitle>
+                  </v-list-item>
+                </v-col>
+                <v-col cols="12" class="config-input">
+                  <v-textarea
+                    v-model="customStyle"
+                    variant="outlined"
+                    rows="6"
+                    auto-grow
+                    max-rows="14"
+                    hide-details
+                    class="config-field"
+                    @update:model-value="onStyleChange"
+                  />
+                </v-col>
+              </v-row>
+            </div>
+
+            <v-alert
+              v-if="!modelOptions.length"
+              type="warning"
+              variant="tonal"
+              class="mx-4 mb-2"
+              text="还没有可用模型，请先在供应商设置中添加并启用供应商与模型"
+            />
+          </div>
+        </v-card>
+      </template>
+
+      <!-- ========== 工具测试 ========== -->
+      <template v-else>
+        <div class="content-header mb-1">
+          <div>
+            <h2 class="text-h4 mb-0">工具测试</h2>
+            <p class="content-sub text-caption text-medium-emphasis mb-0">
+              不用对话，直接在这里试画图、改图。正式出图会自动存进下方历史
+            </p>
+          </div>
+          <v-btn variant="text" prepend-icon="lucide:rotate-ccw" :loading="genLoading" @click="refreshGenerated">刷新结果</v-btn>
+        </div>
+
+        <v-tabs v-model="toolTab" color="primary" class="mb-4">
+          <v-tab value="generate">生成图片</v-tab>
+          <v-tab value="edit">编辑图片</v-tab>
+        </v-tabs>
+
+        <!-- 生图 / 编辑：用 v-tabs 切换 + v-if 面板，避免引入重量级 VWindow/focusTrap -->
+        <template v-if="toolTab === 'generate'">
+          <v-card rounded="md" variant="flat" color="background" class="tools-card">
+              <v-card-text class="pa-5">
+                <v-select
+                  v-model="genForm.model_id"
+                  label="绘画模型"
+                  hint="不选则用功能设置里的默认模型"
+                  persistent-hint
+                  :items="modelOptionsWithDefault"
+                  placeholder="用默认模型"
+                  clearable
+                  hide-details
+                />
+                <div class="text-subtitle-1 font-weight-medium mt-6 mb-3">画面描述</div>
+                <v-textarea
+                  v-model="genForm.prompt"
+                  label="想要画什么（必填）"
+                  placeholder="比如：一只坐在云上的猫，动漫风格"
+                  rows="2"
+                  auto-grow
+                  hide-details
+                />
+                <v-textarea
+                  v-model="genForm.negative_prompt"
+                  class="mt-4"
+                  label="不想看到的内容"
+                  placeholder="比如：模糊、水印、多余的手指"
+                  rows="1"
+                  auto-grow
+                  hide-details
+                />
+                <div class="text-subtitle-1 font-weight-medium mt-6 mb-3">图片设置</div>
+                <v-row dense>
+                  <v-col cols="12" sm="6">
+                    <v-text-field v-model="genForm.size" label="自定义尺寸" placeholder="如 1024x1024" clearable hide-details />
+                  </v-col>
+                  <v-col cols="12" sm="6">
+                    <v-select v-model="genForm.size" label="常用尺寸" :items="resOptions" placeholder="选一个预设" clearable hide-details />
+                  </v-col>
+                  <v-col cols="12" sm="6">
+                    <v-text-field v-model="genForm.aspect_ratio" label="画面比例" placeholder="如 16:9、1:1" clearable hide-details />
+                  </v-col>
+                  <v-col cols="12" sm="6">
+                    <v-text-field v-model="genForm.quality" label="清晰度" placeholder="比如：标准、高清" clearable hide-details />
+                  </v-col>
+                  <v-col cols="12" sm="6">
+                    <v-text-field v-model.number="genForm.n" label="一次画几张" type="number" :min="1" :max="4" hide-details />
+                  </v-col>
+                  <v-col cols="12" sm="6">
+                    <v-text-field v-model="genForm.seed" label="复现编号" placeholder="留空每次随机" clearable hide-details />
+                  </v-col>
+                </v-row>
+
+                <div class="d-flex align-center ga-2 flex-wrap mt-5">
+                  <v-btn color="primary" variant="flat" prepend-icon="lucide:flask-conical" :loading="genTesting" @click="doGenTest(true)">模拟生成</v-btn>
+                  <v-btn variant="outlined" prepend-icon="lucide:sparkles" :loading="genTesting" @click="doGenTest(false)">正式生成</v-btn>
+                  <span v-if="genMsg" class="text-caption" :class="genError ? 'text-error' : 'text-medium-emphasis'">{{ genMsg }}</span>
+                </div>
+
+                <div v-if="genTesting" class="d-flex justify-center py-8">
+                  <v-progress-circular indeterminate color="primary" />
+                </div>
+                <template v-else-if="genPreviews.length">
+                  <div class="text-subtitle-1 font-weight-medium mt-6 mb-3">生成结果</div>
+                  <div class="preview-grid">
+                    <v-card v-for="(p, idx) in genPreviews" :key="idx" variant="outlined" rounded="control" class="preview-card">
+                      <div class="thumb-box"><img :src="p.src" alt="结果预览" /></div>
+                      <div v-if="p.markdown" class="text-caption text-medium-emphasis pa-2 preview-md">{{ p.markdown }}</div>
+                    </v-card>
+                  </div>
+                </template>
+              </v-card-text>
+            </v-card>
+        </template>
+
+        <!-- 编辑 -->
+        <template v-else>
+          <v-card rounded="md" variant="flat" color="background" class="tools-card">
+            <v-card-text class="pa-5">
+                <v-select
+                  v-model="editForm.model_id"
+                  label="绘画模型"
+                  hint="不选则用功能设置里的默认模型"
+                  persistent-hint
+                  :items="modelOptionsWithDefault"
+                  placeholder="用默认模型"
+                  clearable
+                  hide-details
+                />
+                <div class="text-subtitle-1 font-weight-medium mt-6 mb-3">画面描述</div>
+                <v-textarea
+                  v-model="editForm.prompt"
+                  label="想改成什么样（必填）"
+                  placeholder="比如：把背景换成海边日落，保留主体"
+                  rows="2"
+                  auto-grow
+                  hide-details
+                />
+                <v-textarea
+                  v-model="editForm.negative_prompt"
+                  class="mt-4"
+                  label="不想看到的内容"
+                  placeholder="比如：模糊、水印、多余的手指"
+                  rows="1"
+                  auto-grow
+                  hide-details
+                />
+
+                <div class="text-subtitle-1 font-weight-medium mt-6 mb-3">要改的图片（必填，可选多张）</div>
+                <v-file-input
+                  v-model="editFiles"
+                  label="选择图片"
+                  accept="image/*"
+                  multiple
+                  prepend-icon="lucide:upload"
+                  variant="outlined"
+                  density="comfortable"
+                  hide-details
+                  @update:model-value="onEditFiles"
+                />
+                <div class="text-caption text-medium-emphasis mt-1">已选 {{ editImages.length }} 张（最多 16 张）</div>
+                <div v-if="editImages.length" class="thumb-grid mt-2">
+                  <v-card v-for="(it, idx) in editImages" :key="idx" variant="outlined" rounded="control" class="thumb-card">
+                    <div class="thumb-box"><img :src="it.dataUrl" :alt="it.name" /></div>
+                    <v-card-actions class="px-2 py-1">
+                      <span class="text-caption text-truncate flex-grow-1">{{ it.name }}</span>
+                      <v-btn variant="text" size="small" icon="lucide:x" color="error" :aria-label="'移除 ' + it.name" @click="removeEditImage(idx)" />
+                    </v-card-actions>
+                  </v-card>
+                </div>
+
+                <v-file-input
+                  v-model="maskFiles"
+                  class="mt-4"
+                  label="只改一部分（可选）"
+                  hint="白色的地方会被重画，其他地方不变"
+                  persistent-hint
+                  accept="image/*"
+                  prepend-icon="lucide:upload"
+                  variant="outlined"
+                  density="comfortable"
+                  hide-details
+                  @update:model-value="onMaskFile"
+                />
+                <div v-if="maskImage" class="thumb-grid mt-2">
+                  <v-card variant="outlined" rounded="control" class="thumb-card">
+                    <div class="thumb-box"><img :src="maskImage.dataUrl" :alt="maskImage.name" /></div>
+                    <v-card-actions class="px-2 py-1">
+                      <span class="text-caption text-truncate flex-grow-1">{{ maskImage.name }}</span>
+                      <v-btn variant="text" size="small" icon="lucide:x" color="error" aria-label="移除局部重画模板" @click="clearMask" />
+                    </v-card-actions>
+                  </v-card>
+                </div>
+
+                <div class="text-subtitle-1 font-weight-medium mt-6 mb-3">图片设置</div>
+                <v-row dense>
+                  <v-col cols="12" sm="6">
+                    <v-text-field v-model="editForm.size" label="自定义尺寸" hint="留空按原图大小" persistent-hint placeholder="如 1024" clearable hide-details />
+                  </v-col>
+                  <v-col cols="12" sm="6">
+                    <v-select v-model="editForm.size" label="常用尺寸" :items="editResOptions" placeholder="选一个预设" clearable hide-details />
+                  </v-col>
+                  <v-col cols="12" sm="6">
+                    <v-text-field v-model="editForm.aspect_ratio" label="画面比例" hint="留空按原图" persistent-hint placeholder="如 16:9、1:1" clearable hide-details />
+                  </v-col>
+                  <v-col cols="12" sm="6">
+                    <v-text-field v-model="editForm.quality" label="清晰度" placeholder="比如：标准、高清" clearable hide-details />
+                  </v-col>
+                  <v-col cols="12" sm="6">
+                    <v-text-field v-model="editForm.seed" label="复现编号" placeholder="留空每次随机" clearable hide-details />
+                  </v-col>
+                </v-row>
+
+                <v-alert
+                  v-if="!editImages.length"
+                  type="warning"
+                  variant="tonal"
+                  class="mt-4"
+                  text="先选一张要改的图片，才能开始"
+                />
+
+                <div class="d-flex align-center ga-2 flex-wrap mt-5">
+                  <v-btn color="primary" variant="flat" prepend-icon="lucide:flask-conical" :loading="editTesting" @click="doEditTest(true)">模拟编辑</v-btn>
+                  <v-btn variant="outlined" prepend-icon="lucide:sparkles" :loading="editTesting" @click="doEditTest(false)">正式编辑</v-btn>
+                  <span v-if="editMsg" class="text-caption" :class="editError ? 'text-error' : 'text-medium-emphasis'">{{ editMsg }}</span>
+                </div>
+
+                <div v-if="editTesting" class="d-flex justify-center py-8">
+                  <v-progress-circular indeterminate color="primary" />
+                </div>
+                <template v-else-if="editPreviews.length">
+                  <div class="text-subtitle-1 font-weight-medium mt-6 mb-3">编辑结果</div>
+                  <div class="preview-grid">
+                    <v-card v-for="(p, idx) in editPreviews" :key="idx" variant="outlined" rounded="control" class="preview-card">
+                      <div class="thumb-box"><img :src="p.src" alt="结果预览" /></div>
+                      <div v-if="p.markdown" class="text-caption text-medium-emphasis pa-2 preview-md">{{ p.markdown }}</div>
+                    </v-card>
+                  </div>
+                </template>
+              </v-card-text>
+            </v-card>
+        </template>
+
+        <div class="d-flex align-center ga-2 mt-6 mb-3">
+          <span class="text-subtitle-1 font-weight-medium d-flex align-center ga-2">
+            <v-icon icon="lucide:images" size="small" /> 画过的图（最近 40 张）
+          </span>
+          <v-chip size="x-small" variant="tonal">{{ generated.length }} 张</v-chip>
+        </div>
+
+        <div v-if="genLoading" class="d-flex justify-center py-8">
+          <v-progress-circular indeterminate color="primary" />
+        </div>
+        <v-empty-state
+          v-else-if="!generated.length"
+          icon="lucide:images"
+          title="还没有作品"
+          text="在上面画一张，这里会出现成品"
+        />
+        <div v-else class="img-grid">
+          <v-card
+            v-for="it in generated"
+            :key="it.relative_path"
+            variant="outlined"
+            rounded="control"
+            class="img-card"
+            @click="openImage(it)"
+          >
+            <div v-if="thumbMap[it.relative_path]" class="thumb-box"><img :src="thumbMap[it.relative_path]" :alt="it.name" /></div>
+            <div v-else class="img-placeholder d-flex align-center justify-center">
+              <v-progress-circular indeterminate size="24" color="primary" />
+            </div>
+            <v-card-actions class="px-2 py-1 d-flex flex-column align-start">
+              <span class="text-caption text-truncate" style="width: 100%">{{ it.name }}</span>
+              <span class="text-caption text-medium-emphasis">{{ it.date }}</span>
+            </v-card-actions>
+          </v-card>
+        </div>
+      </template>
+    </div>
+
+    <!-- 悬浮保存：仅 providers/settings 且脏时显示 -->
     <Transition name="fab">
-      <n-button
+      <v-btn
         v-if="dirty && activeKey !== 'tools'"
         class="save-fab"
-        type="primary"
-        round
+        color="primary"
+        variant="flat"
+        rounded="pill"
         size="large"
+        elevation="6"
+        prepend-icon="lucide:save"
         :loading="saving"
         @click="save"
       >
-        <template #icon><Icon icon="lucide:save" /></template>
         保存更改
-      </n-button>
+      </v-btn>
     </Transition>
 
     <!-- 图片预览弹窗 -->
-    <n-modal v-model:show="previewVisible" preset="card" :title="previewTitle" style="width: min(720px, 96vw)">
-      <img v-if="previewSrc" :src="previewSrc" style="width: 100%; border-radius: 12px" />
-      <div v-if="previewPath" class="hint" style="margin-top: 8px">{{ previewPath }}</div>
-    </n-modal>
-  </n-layout>
+    <v-dialog v-model="previewVisible" max-width="760">
+      <v-card rounded="card">
+        <v-card-title class="text-subtitle-1 px-4 pt-3 pb-1 text-truncate">{{ previewTitle }}</v-card-title>
+        <v-card-text class="px-4 pb-2">
+          <div class="preview-stage">
+            <img :src="previewSrc" :alt="previewTitle" />
+          </div>
+          <div v-if="previewPath" class="text-caption text-medium-emphasis mt-2">{{ previewPath }}</div>
+        </v-card-text>
+        <v-card-actions class="px-4 pb-3">
+          <v-spacer />
+          <v-btn variant="text" @click="previewVisible = false">关闭</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+  </v-main>
 </template>
 
 <script setup lang="ts">
-import { computed, h, inject, onMounted, reactive, ref } from 'vue'
-import {
-  NAlert,
-  NButton,
-  NCard,
-  NCheckbox,
-  NDivider,
-  NEmpty,
-  NForm,
-  NFormItem,
-  NGi,
-  NGrid,
-  NInput,
-  NInputNumber,
-  NLayout,
-  NLayoutContent,
-  NLayoutSider,
-  NMenu,
-  NModal,
-  NPopconfirm,
-  NScrollbar,
-  NSelect,
-  NSpin,
-  NSwitch,
-  NTabPane,
-  NTabs,
-  NTag,
-  useMessage,
-} from 'naive-ui'
-import type { MenuOption } from 'naive-ui'
-import { Icon } from '@iconify/vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useBridge } from './composables/useBridge'
-import { themeKey } from './theme'
+import { toast } from './composables/useToast'
+import { confirmDialog } from './composables/useConfirm'
 
 const { apiGet, apiPost, init } = useBridge()
-const message = useMessage()
-const { isDark, toggle: toggleTheme } = inject(themeKey)!
 
-const collapsed = ref(false)
-const activeKey = ref<'providers' | 'settings' | 'tools'>('providers')
+// ---------- 侧栏 ----------
+type NavKey = 'providers' | 'settings' | 'tools'
+const navItems: { key: NavKey; label: string; icon: string }[] = [
+  { key: 'providers', label: '供应商设置', icon: 'lucide:server' },
+  { key: 'settings', label: '功能设置', icon: 'lucide:settings' },
+  { key: 'tools', label: '工具测试', icon: 'lucide:flask-conical' },
+]
+const activeKey = ref<NavKey>('providers')
+const rail = ref(false)
 const narrowMql = window.matchMedia('(max-width: 768px)')
-const syncCollapsed = () => { collapsed.value = narrowMql.matches }
-onMounted(() => {
-  syncCollapsed()
-  narrowMql.addEventListener('change', syncCollapsed)
-})
+const syncRail = () => { rail.value = narrowMql.matches }
+onMounted(() => narrowMql.addEventListener('change', syncRail))
+onUnmounted(() => narrowMql.removeEventListener('change', syncRail))
+syncRail()
 
-const menuOptions: MenuOption[] = [
-  { label: '供应商设置', key: 'providers', icon: () => h(Icon, { icon: 'lucide:server' }) },
-  { label: '功能设置', key: 'settings', icon: () => h(Icon, { icon: 'lucide:settings' }) },
-  { label: '工具测试', key: 'tools', icon: () => h(Icon, { icon: 'lucide:flask-conical' }) },
-]
-function onMenu(k: string) { activeKey.value = k as any; if (k === 'tools') refreshGenerated() }
+function toggleRail() { rail.value = !rail.value }
+function onNav(key: NavKey) {
+  activeKey.value = key
+  if (key === 'tools') void refreshGenerated()
+}
 
-const kindOptions = [
-  { label: 'openai', value: 'openai' },
-  { label: 'xai', value: 'xai' },
-  { label: 'seedream', value: 'seedream' },
-  { label: 'gemini', value: 'gemini' },
-  { label: 'sensenova', value: 'sensenova' },
-  { label: 'comfyui', value: 'comfyui' },
-]
-const resOptions = [
-  { label: '512x512', value: '512x512' },
-  { label: '1024x1024', value: '1024x1024' },
-  { label: '1024x1536', value: '1024x1536' },
-  { label: '1536x1024', value: '1536x1024' },
-  { label: '1K', value: '1K' },
-  { label: '2K', value: '2K' },
-]
-const editResOptions = [
-  { label: '512（最短边 512）', value: '512' },
-  { label: '1024（最短边 1024）', value: '1024' },
-  { label: '1536（最短边 1536）', value: '1536' },
-  { label: '2048（最短边 2048）', value: '2048' },
-]
+// ---------- 选项 ----------
+const kindOptions = ['openai', 'xai', 'seedream', 'gemini', 'sensenova', 'comfyui']
+const resOptions = ['512x512', '1024x1024', '1024x1536', '1536x1024', '1K', '2K']
+const editResOptions = ['512', '1024', '1536', '2048']
 
+// ---------- 数据模型 ----------
 interface Model {
   id: string
   name: string
@@ -530,18 +761,27 @@ const customStyle = ref('')
 const templates = ref<Record<string, any>>({})
 const baseline = ref('')
 
-// API Keys 输入草稿（按 provider id 暂存，不进持久化数据）
-const keyInput = reactive<Record<string, string>>({})
+/** 每个供应商的 API Keys 输入框是否聚焦：聚焦时 chip 显示明文，失焦后遮蔽 */
+const keysFocus = reactive<Record<string, boolean>>({})
+
+/** 遮蔽密钥：sk-abc123efgh → sk-••••••efgh；短串全遮蔽 */
 function maskKey(k: string): string {
-  if (k.length <= 12) return k
-  return `${k.slice(0, 6)}…${k.slice(-4)}`
+  const s = String(k || '').trim()
+  if (s.length <= 8) return s ? '••••••••' : ''
+  return `${s.slice(0, 3)}${'•'.repeat(6)}${s.slice(-4)}`
 }
-function addKey(p: Provider) {
-  const v = (keyInput[p.id] || '').trim()
-  if (!v) return
-  if (!p.api_keys.includes(v)) p.api_keys.push(v)
-  keyInput[p.id] = ''
-}
+
+const modelOptions = computed(() => {
+  const opts: { title: string; value: string }[] = []
+  for (const p of providers.value) {
+    if (!p.enabled) continue
+    for (const m of p.models) {
+      if (!m.enabled) continue
+      opts.push({ title: `${p.name} / ${m.name}`, value: `${p.id}::${m.id}` })
+    }
+  }
+  return opts
+})
 
 // 前端内置模型→擅长画风预览（与后端 core/config.py 的 MODEL_STYLES 保持一致）
 const MODEL_STYLE_PREVIEW: Record<string, string> = {
@@ -558,18 +798,10 @@ const currentModelStyle = computed(() => {
   return hit ? MODEL_STYLE_PREVIEW[hit] : ''
 })
 
-const modelOptions = computed(() => {
-  const opts: { label: string; value: string }[] = []
-  for (const p of providers.value) {
-    if (!p.enabled) continue
-    for (const m of p.models) {
-      if (!m.enabled) continue
-      const id = `${p.id}::${m.id}`
-      opts.push({ label: `${p.name} / ${m.name}`, value: id })
-    }
-  }
-  return opts
-})
+const modelOptionsWithDefault = computed(() => [
+  { title: '默认模型（功能设置）', value: '' },
+  ...modelOptions.value,
+])
 
 const dirty = computed(() => {
   if (loading.value) return false
@@ -617,7 +849,7 @@ async function reload() {
       customStyle: customStyle.value,
     })
   } catch (e) {
-    message.error(`加载失败: ${(e as Error).message}`)
+    toast.error(`加载失败: ${(e as Error).message}`)
   } finally {
     loading.value = false
   }
@@ -649,39 +881,43 @@ function addProvider() {
 
 function onModelNameChange(p: Provider, m: Model, v: string) {
   const oldId = m.id
-  const newId = v.trim() || oldId
+  const newId = String(v || '').trim() || oldId
   const oldFull = `${p.id}::${oldId}`
   const newFull = `${p.id}::${newId}`
-  m.model = v
+  m.model = String(v || '')
   m.id = newId
-  // 草稿同步：若默认指向旧模型，自动跟随新模型名
-  if (defaultModelId.value === oldFull) {
-    defaultModelId.value = newFull
-  }
+  if (defaultModelId.value === oldFull) defaultModelId.value = newFull
 }
 
-function removeProvider(idx: number) {
+async function confirmRemoveProvider(idx: number) {
   const p = providers.value[idx]
+  const ok = await confirmDialog({
+    title: '删除供应商',
+    text: `删除 ${p.name || p.id}？此操作需保存后生效`,
+    confirmText: '删除',
+    danger: true,
+  })
+  if (!ok) return
   const prefix = `${p.id}::`
-  if (defaultModelId.value && defaultModelId.value.startsWith(prefix)) {
-    defaultModelId.value = null
-  }
+  if (defaultModelId.value && defaultModelId.value.startsWith(prefix)) defaultModelId.value = null
   providers.value.splice(idx, 1)
 }
 
 function addModel(p: Provider) {
-  p.models.push({
-    id: 'gpt-image-1',
-    name: '新模型',
-    model: 'gpt-image-1',
-    enabled: true,
-  })
+  p.models.push({ id: 'gpt-image-1', name: '新模型', model: 'gpt-image-1', enabled: true })
 }
-function removeModel(p: Provider, idx: number) {
-  const full = `${p.id}::${p.models[idx].id}`
-  if (defaultModelId.value === full) {
-    defaultModelId.value = null
-  }
+
+async function confirmRemoveModel(p: Provider, idx: number) {
+  const m = p.models[idx]
+  const ok = await confirmDialog({
+    title: '删除模型',
+    text: `删除模型 ${m.name || m.model}？`,
+    confirmText: '删除',
+    danger: true,
+  })
+  if (!ok) return
+  const full = `${p.id}::${m.id}`
+  if (defaultModelId.value === full) defaultModelId.value = null
   p.models.splice(idx, 1)
 }
 
@@ -704,52 +940,34 @@ async function save() {
       style_recommend: !!styleRecommend.value,
       custom_style: customStyle.value.trim(),
     }
-    const data: any = await apiPost('config/save', payload)
-    // server returns normalized providers/options, keep client in sync
-    if (data?.providers) {
-      // reload to reflect normalization
-      await reload()
-    } else {
-      baseline.value = JSON.stringify({
-        providers: providers.value,
-        defaultModelId: defaultModelId.value,
-        styleRecommend: styleRecommend.value,
-        customStyle: customStyle.value,
-      })
-    }
-    message.success('已保存并即时生效')
+    await apiPost('config/save', payload)
+    await reload()
+    toast.success('已保存并即时生效')
   } catch (e) {
-    message.error(`保存失败: ${(e as Error).message}`)
+    toast.error(`保存失败: ${(e as Error).message}`)
   } finally {
     saving.value = false
   }
 }
 
 let defaultSaveTimer: number | null = null
-async function onDefaultModelChange() {
-  if (loading.value) return
-  if (!baseline.value) return
+function onDefaultModelChange() {
+  if (loading.value || !baseline.value) return
   if (defaultSaveTimer) window.clearTimeout(defaultSaveTimer)
-  defaultSaveTimer = window.setTimeout(() => {
-    void save()
-  }, 300) as unknown as number
+  defaultSaveTimer = window.setTimeout(() => { void save() }, 300) as unknown as number
 }
-
 let styleSaveTimer: number | null = null
 function onStyleChange() {
-  if (loading.value) return
-  if (!baseline.value) return
+  if (loading.value || !baseline.value) return
   if (styleSaveTimer) window.clearTimeout(styleSaveTimer)
-  styleSaveTimer = window.setTimeout(() => {
-    void save()
-  }, 300) as unknown as number
+  styleSaveTimer = window.setTimeout(() => { void save() }, 300) as unknown as number
 }
 
-// ------- 工具测试：两工具全参数 + 本地上传 -------
+// ---------- 工具测试 ----------
 const toolTab = ref<'generate' | 'edit'>('generate')
 const genForm = reactive({
   model_id: null as string | null,
-  prompt: 'a cute cat sitting on a cloud, anime style',
+  prompt: '',
   negative_prompt: '',
   size: '1024x1024',
   aspect_ratio: '',
@@ -759,7 +977,7 @@ const genForm = reactive({
 })
 const editForm = reactive({
   model_id: null as string | null,
-  prompt: '把背景换成海边日落，保留主体',
+  prompt: '',
   negative_prompt: '',
   size: '',
   aspect_ratio: '',
@@ -768,20 +986,18 @@ const editForm = reactive({
 })
 const genTesting = ref(false)
 const genMsg = ref('')
+const genError = ref(false)
 const genPreviews = ref<{ src: string; markdown: string }[]>([])
 const editTesting = ref(false)
 const editMsg = ref('')
+const editError = ref(false)
 const editPreviews = ref<{ src: string; markdown: string }[]>([])
-// 上传：转 data URL 直调后端 _load_image_bytes
-const editFileInput = ref<HTMLInputElement | null>(null)
-const maskFileInput = ref<HTMLInputElement | null>(null)
-const editImages = ref<{ name: string; dataUrl: string }[]>([])
-const maskImage = ref<{ name: string; dataUrl: string } | null>(null)
 
-const modelOptionsWithDefault = computed(() => [
-  { label: '默认模型（功能设置）', value: '' } as any,
-  ...modelOptions.value,
-])
+interface PickedImage { name: string; dataUrl: string }
+const editFiles = ref<File[]>([])
+const maskFiles = ref<File[]>([])
+const editImages = ref<PickedImage[]>([])
+const maskImage = ref<PickedImage | null>(null)
 
 function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -791,37 +1007,54 @@ function fileToDataUrl(file: File): Promise<string> {
     reader.readAsDataURL(file)
   })
 }
-function triggerEditPick() { editFileInput.value?.click() }
-function triggerMaskPick() { maskFileInput.value?.click() }
-async function onEditFiles(e: Event) {
-  const input = e.target as HTMLInputElement
-  const files = Array.from(input.files || [])
-  input.value = ''
-  if (!files.length) return
+
+function asFileArray(files: File | File[] | null): File[] {
+  if (!files) return []
+  return Array.isArray(files) ? files : [files]
+}
+
+async function onEditFiles(files: File | File[] | null) {
+  const incoming = asFileArray(files)
+  editFiles.value = []
+  if (!incoming.length) { editImages.value = []; return }
   const remain = 16 - editImages.value.length
-  const slice = files.slice(0, Math.max(0, remain))
-  if (files.length > remain) message.warning(`最多 16 张，已截取前 ${remain} 张`)
+  const slice = incoming.slice(0, Math.max(0, remain))
+  if (incoming.length > remain) toast.warning(`最多 16 张，已截取前 ${remain} 张`)
   for (const f of slice) {
     try { editImages.value.push({ name: f.name, dataUrl: await fileToDataUrl(f) }) }
-    catch { message.error(`读取失败: ${f.name}`) }
+    catch { toast.error(`读取失败: ${f.name}`) }
   }
 }
 function removeEditImage(idx: number) { editImages.value.splice(idx, 1) }
-function clearEditImages() { editImages.value = [] }
-async function onMaskFile(e: Event) {
-  const input = e.target as HTMLInputElement
-  const f = input.files?.[0]
-  input.value = ''
-  if (!f) return
+
+async function onMaskFile(files: File | File[] | null) {
+  const f = asFileArray(files)[0]
+  maskFiles.value = []
+  if (!f) { maskImage.value = null; return }
   try { maskImage.value = { name: f.name, dataUrl: await fileToDataUrl(f) } }
-  catch { message.error(`读取失败: ${f.name}`) }
+  catch { toast.error(`读取失败: ${f.name}`) }
 }
-function clearMask() { maskImage.value = null }
+function clearMask() { maskImage.value = null; maskFiles.value = [] }
+
+function previewsFrom(data: any): { src: string; markdown: string }[] {
+  const list: any[] = data?.images || (data?.b64 ? [data] : [])
+  const result = list
+    .map((it: any) => ({
+      src: it.b64 ? `data:${it.mime || 'image/png'};base64,${it.b64}` : '',
+      markdown: it.markdown || '',
+    }))
+    .filter((p: any) => p.src)
+  if (!result.length && data?.b64) {
+    result.push({ src: `data:${data.mime || 'image/png'};base64,${data.b64}`, markdown: '' })
+  }
+  return result
+}
 
 async function doGenTest(mock: boolean) {
-  if (!genForm.prompt.trim()) { message.warning('请输入 prompt'); return }
+  if (!genForm.prompt.trim()) { toast.warning('先说说想画什么'); return }
   genTesting.value = true
-  genMsg.value = mock ? 'Mock 生成中...' : '真实生成中...'
+  genError.value = false
+  genMsg.value = mock ? '正在试画…' : '正在出图…'
   genPreviews.value = []
   try {
     const body: Record<string, unknown> = {
@@ -837,28 +1070,24 @@ async function doGenTest(mock: boolean) {
       mock,
     }
     const data: any = await apiPost('test_generate', body)
-    const list: any[] = data.images || (data.b64 ? [data] : [])
-    genPreviews.value = list
-      .map((it: any) => ({
-        src: it.b64 ? `data:${it.mime || 'image/png'};base64,${it.b64}` : '',
-        markdown: it.markdown || '',
-      }))
-      .filter((p: any) => p.src)
-    if (!genPreviews.value.length && data.b64) {
-      genPreviews.value = [{ src: `data:${data.mime || 'image/png'};base64,${data.b64}`, markdown: '' }]
-    }
-    genMsg.value = mock ? 'Mock 生成成功' : `生成成功 ${data.provider || ''} ${data.model || ''}`.trim()
+    genPreviews.value = previewsFrom(data)
+    genMsg.value = mock ? '试画成功' : `出图成功 ${data.provider || ''} ${data.model || ''}`.trim()
     if (!mock) await refreshGenerated()
   } catch (err) {
-    genMsg.value = `失败: ${(err as Error).message}`
-    message.error(genMsg.value)
-  } finally { genTesting.value = false }
+    genError.value = true
+    genMsg.value = `没画出来：${(err as Error).message}`
+    toast.error(genMsg.value)
+  } finally {
+    genTesting.value = false
+  }
 }
+
 async function doEditTest(mock: boolean) {
-  if (!editForm.prompt.trim()) { message.warning('请输入 prompt'); return }
-  if (!editImages.value.length) { message.warning('请先上传输入图片'); return }
+  if (!editForm.prompt.trim()) { toast.warning('先说说想改成什么样'); return }
+  if (!editImages.value.length) { toast.warning('先选一张要改的图片'); return }
   editTesting.value = true
-  editMsg.value = mock ? 'Mock 编辑中...' : '真实编辑中...'
+  editError.value = false
+  editMsg.value = mock ? '正在试改…' : '正在改图…'
   editPreviews.value = []
   try {
     const body: Record<string, unknown> = {
@@ -875,24 +1104,19 @@ async function doEditTest(mock: boolean) {
       mock,
     }
     const data: any = await apiPost('test_generate', body)
-    const list: any[] = data.images || (data.b64 ? [data] : [])
-    editPreviews.value = list
-      .map((it: any) => ({
-        src: it.b64 ? `data:${it.mime || 'image/png'};base64,${it.b64}` : '',
-        markdown: it.markdown || '',
-      }))
-      .filter((p: any) => p.src)
-    if (!editPreviews.value.length && data.b64) {
-      editPreviews.value = [{ src: `data:${data.mime || 'image/png'};base64,${data.b64}`, markdown: '' }]
-    }
-    editMsg.value = mock ? 'Mock 编辑成功' : `编辑成功 ${data.provider || ''} ${data.model || ''}`.trim()
+    editPreviews.value = previewsFrom(data)
+    editMsg.value = mock ? '试改成功' : `改图成功 ${data.provider || ''} ${data.model || ''}`.trim()
     if (!mock) await refreshGenerated()
   } catch (err) {
-    editMsg.value = `失败: ${(err as Error).message}`
-    message.error(editMsg.value)
-  } finally { editTesting.value = false }
+    editError.value = true
+    editMsg.value = `没改成：${(err as Error).message}`
+    toast.error(editMsg.value)
+  } finally {
+    editTesting.value = false
+  }
 }
 
+// ---------- 已生成图片 ----------
 const genLoading = ref(false)
 const generated = ref<{ relative_path: string; name: string; date: string }[]>([])
 const thumbMap = reactive<Record<string, string>>({})
@@ -901,27 +1125,26 @@ const previewSrc = ref('')
 const previewTitle = ref('')
 const previewPath = ref('')
 
-
-
 async function refreshGenerated() {
   genLoading.value = true
   try {
     const list: any = await apiGet('generated')
     generated.value = Array.isArray(list) ? list : []
-    // lazy load thumbs for first 12
     for (const it of generated.value.slice(0, 12)) {
       if (thumbMap[it.relative_path]) continue
       void loadThumb(it.relative_path)
     }
-  } catch (e) {
-    // ignore
-  } finally { genLoading.value = false }
+  } catch {
+    // 历史列表拉取失败不打扰用户，保留空态
+  } finally {
+    genLoading.value = false
+  }
 }
 async function loadThumb(rel: string) {
   try {
     const data: any = await apiGet('image_b64', { path: rel })
     if (data?.b64) thumbMap[rel] = `data:${data.mime || 'image/png'};base64,${data.b64}`
-  } catch {}
+  } catch { /* 单张缩略图失败留占位 */ }
 }
 async function openImage(it: { relative_path: string; name: string }) {
   previewTitle.value = it.name
@@ -935,7 +1158,7 @@ async function openImage(it: { relative_path: string; name: string }) {
       previewSrc.value = `data:${data.mime || 'image/png'};base64,${data.b64}`
       previewVisible.value = true
     } catch (e) {
-      message.error(`加载失败: ${(e as Error).message}`)
+      toast.error(`加载失败: ${(e as Error).message}`)
     }
   }
 }
@@ -943,139 +1166,166 @@ async function openImage(it: { relative_path: string; name: string }) {
 onMounted(() => { void reload() })
 </script>
 
-<style>
-.layout {
-  display: flex;
-  height: 100vh;
+<style scoped>
+.brush-drawer {
+  border-right: 1px solid rgba(var(--v-border-color), 0.12);
+  /* drawer 默认吃 surface；侧栏必须跟页面同 background，卡片才配浮出 */
+  background-color: rgb(var(--v-theme-background)) !important;
 }
-.sider-inner {
-  height: 100%;
-  background: var(--glass-thick-bg);
-  border-right: 1px solid var(--glass-divider);
-  display: flex;
-  flex-direction: column;
+/* v-list 默认吃 surface；侧栏里的列表必须透明，否则菜单区比空白亮一档 */
+.v-application .brush-drawer .v-list {
+  background-color: transparent !important;
 }
-.sider-inner.collapsed .sider-header {
-  flex-direction: column;
-  justify-content: center;
-  padding: 10px 8px;
+.drawer-head {
+  min-height: 56px;
 }
-.sider-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--glass-divider);
-}
-.brand {
-  flex: 1;
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text-1);
-}
-.theme-toggle {
-  flex-shrink: 0;
-  width: 34px;
-  height: 34px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 16px;
-  color: inherit;
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius-full);
-  background: var(--glass-regular-bg);
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
-  box-shadow: inset 0 1px 0 var(--glass-highlight), var(--glass-shadow);
-  cursor: pointer;
-  transition: transform 0.15s ease, background 0.2s ease;
-}
-.theme-toggle:hover { transform: scale(1.06); }
-.theme-toggle:active { transform: scale(0.94); }
-.inline-icon { width: 14px; height: 14px; vertical-align: -2px; margin-right: 2px; color: var(--text-3); }
-.sider-scroll { flex: 1; }
-.sider-footer { padding: 10px 16px; border-top: 1px solid var(--glass-divider); }
-.foot-hint { font-size: 12px; color: var(--text-3); word-break: break-all; }
-.content { flex: 1; min-width: 0; overflow: hidden; }
-.content-scroll { height: 100%; }
-.content-inner { max-width: 860px; margin: 0 auto; padding: 20px 26px; }
-.content-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
-.content-header h2 { font-size: 16px; color: var(--text-1); }
-.header-actions { display: flex; gap: 8px; align-items: center; }
-.content-sub { font-size: 12px; color: var(--text-3); margin-bottom: 14px; }
 
-.provider-card {
-  background: #fff;
-  border: 1px solid var(--glass-divider);
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
-  border-radius: var(--radius-md);
-  padding: 12px 14px;
-  margin-bottom: 14px;
+.content-inner {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 22px 28px 96px;
 }
-:root[data-theme='dark'] .provider-card { background: rgba(255, 255, 255, 0.04); }
-/* 收紧表单：用 n-form-item 的 :show-feedback="false" prop，不覆盖内部类 */
-.provider-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
-.provider-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
-.provider-name { font-weight: 600; color: var(--text-1); }
-.provider-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-.hint { font-size: 12px; color: var(--text-3); margin-top: 4px; }
-.key-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
-.models-head { display: flex; align-items: center; justify-content: space-between; margin: 10px 0 6px; }
-.models-title { font-size: 12px; color: var(--text-2); font-weight: 600; }
-.model-empty { font-size: 12px; color: var(--text-3); padding: 8px; text-align: center; border: 1px dashed var(--glass-divider); border-radius: var(--radius-xs); }
-.model-card {
-  border: 1px dashed var(--glass-divider);
-  background: rgba(0, 0, 0, 0.02);
-  border-radius: var(--radius-sm);
-  padding: 8px 10px;
-  margin-bottom: 8px;
+.content-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
 }
-:root[data-theme='dark'] .model-card { background: rgba(255,255,255,0.04); }
-.model-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
-.model-name { font-weight: 600; color: var(--text-1); }
-.save-bar { display: flex; align-items: center; gap: 12px; margin-top: 6px; flex-wrap: wrap; }
+.content-sub {
+  margin-top: 4px;
+}
 
+/* ---- 上游 AstrBotConfigV4.vue 行式范式（照抄数值；颜色用 rgb() 包裹主题三元组） ---- */
+.v-application .config-section {
+  margin-bottom: 4px;
+}
+.v-application .config-title {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: rgb(var(--v-theme-primaryText));
+}
+.v-application .config-hint {
+  font-size: 0.75rem;
+  color: rgb(var(--v-theme-secondaryText));
+  margin-top: 2px;
+}
+.v-application .object-config {
+  width: 100%;
+}
+.v-application .config-row {
+  margin: 0;
+  align-items: center;
+  padding: 8px 8px;
+  border-radius: 4px;
+}
+.v-application .config-row:hover {
+  background-color: rgba(0, 0, 0, 0.03);
+}
+.v-application .property-info {
+  padding: 0;
+}
+.v-application .property-name {
+  font-size: 0.875rem;
+  color: rgb(var(--v-theme-primaryText));
+}
+.v-application .property-hint {
+  font-size: 0.75rem;
+  color: rgb(var(--v-theme-secondaryText));
+  margin-top: 2px;
+}
+.v-application .config-input {
+  padding: 4px 8px;
+}
+.v-application .config-field {
+  margin-bottom: 0;
+}
+.v-application .config-divider {
+  border-color: rgba(0, 0, 0, 0.1);
+  margin-left: 24px;
+}
+.model-block {
+  padding: 0 16px 8px;
+}
+
+.provider-card,
 .setting-card {
-  margin-top: 6px;
-  --n-color: #fff;
-  --n-border-color: var(--glass-divider);
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
+  border-color: rgba(var(--v-border-color), 0.16);
 }
-:root[data-theme='dark'] .setting-card { --n-color: rgba(255, 255, 255, 0.04); }
-.stat-card { text-align: center; }
-.stat-num { font-size: 16px; font-weight: 700; color: var(--accent); }
-.stat-label { font-size: 12px; color: var(--text-3); margin-top: 2px; }
-.tool-info { display: flex; flex-direction: column; gap: 8px; }
-.tool-row { display: flex; gap: 10px; align-items: baseline; }
-.tool-name { font-family: Consolas, monospace; font-size: 12px; color: var(--accent); background: var(--accent-soft); padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
-.tool-desc { color: var(--text-2); }
-.tool-meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
+/* 工具测试页是真表单：跟页面同色、去边框阴影，靠标题和控件组织信息 */
+.tools-card {
+  border: none !important;
+  box-shadow: none !important;
+}
+.model-card {
+  border-color: rgba(var(--v-border-color), 0.2);
+}
 
-.test-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
-.test-previews { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; margin-top: 12px; }
-.test-preview { border: 1px solid var(--glass-border); border-radius: var(--radius-md); overflow: hidden; background: var(--glass-regular-bg); }
-.test-preview img { width: 100%; display: block; }
-.preview-md { font-size: 12px; color: var(--text-3); padding: 8px; word-break: break-all; background: var(--glass-regular-bg); }
-.upload-area { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
-.upload-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; margin-top: 8px; }
-.upload-thumb { border: 1px solid var(--glass-border); border-radius: var(--radius-sm); overflow: hidden; background: var(--glass-regular-bg); }
-.upload-thumb img { width: 100%; height: 110px; object-fit: cover; display: block; }
-.upload-thumb-bar { display: flex; align-items: center; gap: 6px; padding: 4px 6px; }
-.upload-thumb-name { flex: 1; min-width: 0; font-size: 12px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.preview-grid,
+.thumb-grid,
+.img-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+}
+.preview-md {
+  word-break: break-all;
+}
+.thumb-box {
+  aspect-ratio: 1;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 4px;
+  background: rgba(var(--v-border-color), 0.08);
+}
+.thumb-box img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.img-placeholder {
+  aspect-ratio: 1;
+  background: rgba(var(--v-border-color), 0.08);
+}
+.img-card {
+  cursor: pointer;
+  transition: transform 0.15s, border-color 0.15s;
+}
+.img-card:hover {
+  transform: translateY(-2px);
+  border-color: rgb(var(--v-theme-primary));
+}
 
-.gen-head { display: flex; align-items: center; justify-content: space-between; margin-top: 18px; margin-bottom: 10px; }
-.gen-title { font-weight: 600; color: var(--text-1); }
-.img-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
-.img-card { border: 1px solid var(--glass-border); border-radius: var(--radius-sm); overflow: hidden; background: var(--glass-regular-bg); cursor: pointer; transition: transform 0.15s, border-color 0.15s; }
-.img-card:hover { transform: translateY(-2px); border-color: var(--accent); }
-.img-card img { width: 100%; height: 140px; object-fit: cover; display: block; }
-.img-placeholder { height: 140px; display: flex; align-items: center; justify-content: center; color: var(--text-3); font-size: 16px; background: var(--glass-divider); }
-.img-cap { padding: 6px 8px; display: flex; flex-direction: column; gap: 2px; }
-.img-name { font-size: 12px; color: var(--text-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.img-date { font-size: 12px; color: var(--text-3); }
+.preview-stage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  max-height: 70vh;
+  background: rgba(var(--v-border-color), 0.08);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.preview-stage img {
+  max-width: 100%;
+  max-height: 70vh;
+  object-fit: contain;
+  display: block;
+}
 
-.save-fab { position: fixed; right: 26px; bottom: 26px; z-index: 100; box-shadow: var(--glass-shadow); }
-.fab-enter-active, .fab-leave-active { transition: opacity 0.25s ease, transform 0.25s ease; }
-.fab-enter-from, .fab-leave-to { opacity: 0; transform: translateY(14px) scale(0.92); }
+.save-fab {
+  position: fixed;
+  right: 28px;
+  bottom: 28px;
+  z-index: 100;
+}
+.fab-enter-active,
+.fab-leave-active {
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+.fab-enter-from,
+.fab-leave-to {
+  opacity: 0;
+  transform: translateY(14px) scale(0.92);
+}
 </style>
