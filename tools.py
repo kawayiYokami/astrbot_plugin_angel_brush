@@ -2,13 +2,28 @@
 
 from __future__ import annotations
 
+import json
+import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from astrbot.api import logger
 from astrbot.core.agent.run_context import ContextWrapper
 from astrbot.core.agent.tool import FunctionTool, ToolExecResult
 from astrbot.core.astr_agent_context import AstrAgentContext
+from astrbot.core.workspace import default_workspace_root
+
+try:  # AstrBot 4.30 起 agent runtime 模块搬到了 astr_agent_runtime 下
+    from astrbot.core.astr_agent_runtime.tools.computer_tools.util import (
+        is_local_runtime,
+        workspace_root_for_context,
+    )
+except ImportError:  # 4.29.x 及更早
+    from astrbot.core.tools.computer_tools.util import (
+        is_local_runtime,
+        workspace_root_for_context,
+    )
 
 _GEN_BASE_DESC = "根据提示词生成一张图片，自动保存到插件数据目录；返回为 file 绝对路径，禁止在 markdown 内联。"
 _EDIT_BASE_DESC = "基于一张或多张输入图片按提示词编辑出新图（局部修改、消除、换背景、扩图、多图融合、风格参考），自动保存到插件数据目录；返回为 file 绝对路径，禁止在 markdown 内联。"
@@ -46,12 +61,89 @@ def update_tool_descriptions(
         _update_description(edit_tool, _EDIT_BASE_DESC, edit_tool.data_dir)
 
 
-def _tool_success_value(result: dict[str, Any], prefix: str) -> str:
+_SEND_SUBDIR = Path("angel_brush") / "output"
+
+
+async def _send_output_dir(context: ContextWrapper[AstrAgentContext]) -> Path:
+    """返回当前会话中「可被 send_message_to_user 读到」的图片目录。
+
+    框架的发送工具只放行会话工作区、AstrBot 临时目录与系统临时目录下的
+    文件；插件数据目录不在白名单内，直接把原图路径交给模型会发不出去
+    （普通成员报权限错误，沙箱模式报路径不存在）。
+
+    这里算目录的方式与框架白名单保持一致：local runtime 用
+    workspace_root_for_context（webchat 项目模式下是 project_<id>），
+    其余 runtime 下框架白名单回落到 legacy 的 workspaces/<umo>。
+    """
+    umo = context.context.event.unified_msg_origin
+    if is_local_runtime(context):
+        workspace = await workspace_root_for_context(context)
+    else:
+        workspace = default_workspace_root(umo)
+    return workspace / _SEND_SUBDIR
+
+
+async def _send_dir_or_none(context: ContextWrapper[AstrAgentContext]) -> Path | None:
+    """解析可发送目录；失败时返回 None，退回原图路径而不是让生图失败。"""
+    try:
+        return await _send_output_dir(context)
+    except Exception as exc:
+        logger.warning(f"AngelBrush: 解析可发送目录失败，退回原图路径: {exc}")
+        return None
+
+
+def _copy_to_send_dir(
+    images: list[dict[str, Any]], data_dir: Path, send_dir: Path
+) -> list[dict[str, Any]]:
+    """把原图复制到可发送目录，并把 absolute_path 指向副本。
+
+    原图始终保留在插件数据目录：生成图片有实际成本，不能被任何自动清理
+    带走；副本只服务于发送这一步，丢了还能从原图再复制。
+    """
+    source_root = (data_dir / "generated-images").resolve()
+    send_dir.mkdir(parents=True, exist_ok=True)
+    copied: list[dict[str, Any]] = []
+    for image in images:
+        source = Path(image["absolute_path"]).resolve(strict=True)
+        if not source.is_relative_to(source_root):
+            raise ValueError(f"图片不在生成目录中: {source}")
+        target = send_dir / source.name
+        shutil.copyfile(source, target)
+        copied.append({**image, "absolute_path": str(target)})
+    return copied
+
+
+def _tool_success_value(
+    result: dict[str, Any],
+    prefix: str,
+    *,
+    data_dir: Path | None = None,
+    send_dir: Path | None = None,
+) -> str:
     images = result.get("images") or []
+
+    if send_dir is not None and data_dir is not None and images:
+        try:
+            images = _copy_to_send_dir(images, data_dir, send_dir)
+        except (OSError, KeyError, ValueError) as exc:
+            logger.warning(f"AngelBrush: 准备发送副本失败: {exc}")
+            return json.dumps(
+                {
+                    "ok": False,
+                    "generated": True,
+                    "message": (
+                        "图片已生成并保存到插件数据目录，但准备发送副本失败。"
+                        "请处理发送问题，不要重新生图。"
+                    ),
+                    "error": str(exc),
+                    "images": result.get("images") or [],
+                },
+                ensure_ascii=False,
+            )
+
     image_lines = "\n".join(
         f"- {img.get('absolute_path') or img.get('relative_path')}" for img in images
     )
-    import json
 
     payload = {
         "ok": True,
@@ -110,7 +202,12 @@ class AngelImageGenerateTool(FunctionTool[AstrAgentContext]):
             self.data_dir,
             {"prompt": prompt, "size": resolution, "operation": "generate"},
         )
-        return _tool_success_value(result, "图片已生成并保存到插件数据目录")
+        return _tool_success_value(
+            result,
+            "图片已生成并保存到插件数据目录",
+            data_dir=self.data_dir,
+            send_dir=await _send_dir_or_none(context),
+        )
 
 
 @dataclass
@@ -178,4 +275,9 @@ class AngelImageEditTool(FunctionTool[AstrAgentContext]):
                 "aspect_ratio": aspect_ratio,
             },
         )
-        return _tool_success_value(result, "图片已编辑并保存到插件数据目录")
+        return _tool_success_value(
+            result,
+            "图片已编辑并保存到插件数据目录",
+            data_dir=self.data_dir,
+            send_dir=await _send_dir_or_none(context),
+        )
