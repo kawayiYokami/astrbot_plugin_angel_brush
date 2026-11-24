@@ -277,6 +277,25 @@ def comfyui_generation_payload(
     return {"prompt": effective_prompt(req), "model": model.get("model") or ""}
 
 
+def modelscope_payload(
+    req: dict[str, Any],
+    model: dict[str, Any],
+    image_urls: list[str] | None = None,
+) -> dict[str, Any]:
+    """ModelScope API-Inference 异步生图请求体。
+
+    编辑图时 image_urls 为 data URL / https URL 列表（image_url 字段，URL 或 base64 均可）。
+    size/quality 等该接口不支持，不下发，避免 400。
+    """
+    payload: dict[str, Any] = {
+        "model": model["model"],
+        "prompt": effective_prompt(req),
+    }
+    if image_urls:
+        payload["image_url"] = image_urls
+    return payload
+
+
 # ---------- edit helpers (resolution=最短边, aspect_ratio=比例, 不填按原图, 不拼 AxB) ----------
 
 

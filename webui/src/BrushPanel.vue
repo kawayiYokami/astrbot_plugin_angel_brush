@@ -48,7 +48,7 @@
           <div>
             <h2 class="text-h4 mb-0">供应商设置</h2>
             <p class="content-sub text-caption text-medium-emphasis mb-0">
-              6 家协议 openai / xai / seedream / gemini / sensenova / comfyui，保存后即时生效
+              7 家协议 openai / xai / seedream / gemini / sensenova / modelscope / comfyui，保存后即时生效
             </p>
           </div>
           <div class="d-flex align-center ga-2">
@@ -727,7 +727,7 @@ function onNav(key: NavKey) {
 }
 
 // ---------- 选项 ----------
-const kindOptions = ['openai', 'xai', 'seedream', 'gemini', 'sensenova', 'comfyui']
+const kindOptions = ['openai', 'xai', 'seedream', 'gemini', 'sensenova', 'modelscope', 'comfyui']
 const resOptions = ['512x512', '1024x1024', '1024x1536', '1536x1024', '1K', '2K']
 const editResOptions = ['512', '1024', '1536', '2048']
 
@@ -789,6 +789,7 @@ const MODEL_STYLE_PREVIEW: Record<string, string> = {
   'gpt-image': '版式化设计/信息卡片、吉卜力/水彩/绘本、3D Q版/Low Poly/像素/矢量插画',
   gemini: '写实摄影纪实、3D 卡通等距微缩、信息图表商业营销（含清晰字体渲染）',
   sensenova: '扁平插画手绘、专业平面设计商用海报、长卷连环叙事、细腻写实',
+  modelscope: '复杂指令遵循与多图编辑、图内中英文文字渲染、写实人像与设计感插画兼顾',
 }
 const currentModelStyle = computed(() => {
   const id = defaultModelId.value

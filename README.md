@@ -14,9 +14,9 @@ AngelBrush 是一个专为 [AstrBot](https://github.com/Soulter/AstrBot) 平台�
 
 把图发给机器人，再告诉它想怎么改——换背景、去掉路人、换个风格、几张图合成一张，都可以。
 
-### 🏪 六家画图服务随便换
+### 🏪 七家画图服务随便换
 
-OpenAI、xAI、豆包 Seedream、Gemini、SenseNova、本地 ComfyUI 都支持。想用哪家就用哪家，也可以同时配好几家，随时切换。
+OpenAI、xAI、豆包 Seedream、Gemini、SenseNova、ModelScope 魔搭、本地 ComfyUI 都支持。想用哪家就用哪家，也可以同时配好几家，随时切换。
 
 ### 🖥️ 配置全在网页上
 
