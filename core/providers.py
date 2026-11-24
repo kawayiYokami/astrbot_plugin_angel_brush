@@ -109,6 +109,18 @@ def append_endpoint(base_url: str, suffix: str) -> str:
     return base + suffix
 
 
+def modelscope_endpoint(base_url: str, suffix: str) -> str:
+    """ModelScope 专用拼接：容忍末尾 /v1。
+
+    用户常按其它供应商的惯例把 base_url 填成 …/v1，若直接再拼 /v1/xxx 会变成
+    /v1/v1/xxx 并被供应商网关以「404 page not found」拒绝。
+    """
+    base = base_url.strip().rstrip("/")
+    if base.lower().endswith("/v1"):
+        base = base[: -len("/v1")]
+    return append_endpoint(base, suffix)
+
+
 # ---------- payload builders ----------
 
 

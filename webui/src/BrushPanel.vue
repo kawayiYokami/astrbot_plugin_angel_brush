@@ -119,7 +119,7 @@
                   </v-list-item>
                 </v-col>
                 <v-col cols="12" sm="6" class="config-input">
-                  <v-select v-model="p.provider_type" variant="outlined" density="compact" :items="kindOptions" hide-details class="config-field" />
+                  <v-select v-model="p.provider_type" variant="outlined" density="compact" :items="kindOptions" hide-details class="config-field" @update:model-value="(v: any) => onKindChange(p, String(v || ''))" />
                 </v-col>
               </v-row>
 
@@ -129,7 +129,7 @@
                 <v-col cols="12" sm="6" class="property-info">
                   <v-list-item density="compact">
                     <v-list-item-title class="property-name">Base URL</v-list-item-title>
-                    <v-list-item-subtitle class="property-hint">如：https://api.openai.com/v1</v-list-item-subtitle>
+                    <v-list-item-subtitle class="property-hint">{{ p.provider_type === 'modelscope' ? 'ModelScope 填根地址即可，如 https://api-inference.modelscope.cn（带不带 /v1 都行）' : '如：https://api.openai.com/v1' }}</v-list-item-subtitle>
                   </v-list-item>
                 </v-col>
                 <v-col cols="12" sm="6" class="config-input">
@@ -854,6 +854,18 @@ async function reload() {
   } finally {
     loading.value = false
   }
+}
+
+function onKindChange(p: Provider, kind: string) {
+  // 仅当 base_url 为空或仍是某模板默认值时自动跟随新类型；用户自定义地址不动
+  const norm = (s: unknown) => String(s ?? '').trim().replace(/\/+$/, '').toLowerCase()
+  const urls = Object.values(templates.value).map((t: any) => norm(t?.base_url))
+  if (p.base_url.trim() && !urls.includes(norm(p.base_url))) return
+  const tmpl: any = templates.value[kind]
+  if (!tmpl?.base_url) return
+  p.base_url = tmpl.base_url
+  const names = Object.values(templates.value).map((t: any) => String(t?.name || ''))
+  if (!p.name.trim() || names.includes(p.name)) p.name = tmpl.name || ''
 }
 
 function addProvider() {

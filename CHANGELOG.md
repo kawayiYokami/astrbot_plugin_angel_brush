@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.6 - 2026-11-24
+
+### Fixed
+
+- ModelScope 报「HTTP 404，404 page not found」：base_url 按其它供应商惯例带 `/v1`（如 `https://api-inference.modelscope.cn/v1`）时，路径会被拼成 `/v1/v1/images/generations`，被供应商网关拒绝。新增 `modelscope_endpoint` 拼接，根地址、带 `/v1`、带完整 endpoint 三种写法均归一到正确路径；任务轮询 URL 同样处理。
+- WebUI 切换供应商类型时，若 Base URL 仍为空或为某模板默认值，会自动跟随新类型同步（自定义地址不覆盖），避免从其它类型切到 modelscope 后残留旧网关地址；Base URL 提示文案按类型区分。
+- ModelScope 提交任务时记录实际请求 URL（`modelscope POST <endpoint> model=… async=true`，不含密钥），排障时可直接核对路径。
+
 ## 0.2.5 - 2026-11-24
 
 ### Added

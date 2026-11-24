@@ -244,7 +244,7 @@ async def _poll_modelscope_task(
     """轮询 ModelScope 异步生图任务，SUCCEED 返回 pending 图片列表，FAILED 报错。"""
     if not _MODELSCOPE_TASK_ID_RE.fullmatch(task_id):
         raise ValueError(f"{provider['name']} 返回的任务 ID 无效")
-    poll_url = prov.append_endpoint(provider["base_url"], f"/v1/tasks/{task_id}")
+    poll_url = prov.modelscope_endpoint(provider["base_url"], f"/v1/tasks/{task_id}")
     headers = {
         "Authorization": f"Bearer {api_key}",
         "X-ModelScope-Task-Type": "image_generation",
@@ -643,8 +643,12 @@ async def _request_with_provider(
                 "Authorization": f"Bearer {api_key}",
                 "X-ModelScope-Async-Mode": "true",
             }
-            endpoint = prov.append_endpoint(
+            endpoint = prov.modelscope_endpoint(
                 provider["base_url"], "/v1/images/generations"
+            )
+            logger.info(
+                f"[天使的画笔] modelscope POST {endpoint} "
+                f"model={model['model']} async=true"
             )
             resp = await client.post(endpoint, json=payload, headers=headers)
             if resp.status_code >= 400:

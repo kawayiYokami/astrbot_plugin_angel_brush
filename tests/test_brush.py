@@ -376,6 +376,29 @@ def test_modelscope_payload():
     assert p2["image_url"] == ["data:image/png;base64,xxx"]
 
 
+def test_modelscope_endpoint_tolerates_v1_suffix():
+    """base_url 带不带 /v1 都必须拼出正确路径，否则供应商网关回 404 page not found。"""
+    from astrbot_plugin_angel_brush.core import providers as prov
+
+    want = "https://api-inference.modelscope.cn/v1/images/generations"
+    for base in (
+        "https://api-inference.modelscope.cn",
+        "https://api-inference.modelscope.cn/",
+        "https://api-inference.modelscope.cn/v1",
+        "https://api-inference.modelscope.cn/v1/",
+    ):
+        assert prov.modelscope_endpoint(base, "/v1/images/generations") == want
+
+    assert (
+        prov.modelscope_endpoint("https://api-inference.modelscope.cn/v1", "/v1/tasks/abc")
+        == "https://api-inference.modelscope.cn/v1/tasks/abc"
+    )
+    # 直接填了完整 endpoint 也不重复
+    assert (
+        prov.modelscope_endpoint(want, "/v1/images/generations") == want
+    )
+
+
 def test_modelscope_url_guard():
     from astrbot_plugin_angel_brush.core.service import _ensure_public_image_url
 
@@ -508,6 +531,52 @@ async def test_mock_modelscope_edit(monkeypatch):
                 },
                 http_client=mock_client,
             )
+        assert len(result["images"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_mock_modelscope_generate_base_v1(monkeypatch):
+    """base_url 带 /v1 时整条链路仍请求正确路径（回归 404 page not found）。"""
+    from astrbot_plugin_angel_brush.core import config, service
+
+    monkeypatch.setattr(service, "_MODELSCOPE_POLL_INTERVAL", 0)
+
+    async def fake_download(provider, api_key, url):
+        return TINY_BYTES
+
+    monkeypatch.setattr(service, "_download_remote", fake_download)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        data_dir = Path(tmp)
+        p = _modelscope_provider()
+        p["base_url"] = "https://api-inference.modelscope.cn/v1"
+        config.save_config(
+            data_dir,
+            [p],
+            "image-provider-modelscope-1::Qwen/Qwen-Image-2.1-Turbo",
+        )
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.method == "POST":
+                assert request.url.path == "/v1/images/generations", request.url.path
+                return httpx.Response(200, json={"task_id": "task-123"})
+            assert request.url.path == "/v1/tasks/task-123", request.url.path
+            return httpx.Response(
+                200,
+                json={
+                    "task_status": "SUCCEED",
+                    "output_images": ["https://cdn.example.com/out.png"],
+                },
+            )
+
+        transport = httpx.MockTransport(handler)
+        async with httpx.AsyncClient(
+            transport=transport, base_url="https://api-inference.modelscope.cn"
+        ) as mock_client:
+            result = await service.generate_images(
+                data_dir, {"prompt": "cat"}, http_client=mock_client
+            )
+        assert result["provider_type"] == "modelscope"
         assert len(result["images"]) == 1
 
 
