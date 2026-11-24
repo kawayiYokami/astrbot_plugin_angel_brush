@@ -14,6 +14,7 @@ PROVIDER_KINDS = {
     "seedream",
     "gemini",
     "sensenova",
+    "modelscope",
 }
 
 # 模型前缀 -> 擅长画风描述（用户确认口径）
@@ -41,6 +42,11 @@ MODEL_STYLES: dict[str, str] = {
         "摄影底图+低饱和暖色调+细长宋体排版；多层嵌套 UI/游戏 UI/电商素材/产品传单，结构严谨无乱码）；"
         "长卷与连环叙事风（24 节气国画长卷直出、多页绘本故事画风统一、人物不走调）；细腻真实的摄影与三次元写实"
         "（美学专家模块优化光影/材质/透视空间，画面干净少瑕疵）"
+    ),
+    "qwen-image": (
+        "复杂指令遵循与多图编辑（给图中物体加/换/删元素、按描述改局部、多张参考图合成，改动精准不走形）；"
+        "图内文字渲染（中英文标语、海报排版、图表标签清晰少乱码，适合电商主图、宣传海报、信息卡片）；"
+        "写实人像与设计感插画兼顾（光影质感细腻，也能出扁平矢量、3D 渲染、动漫风）"
     ),
 }
 
@@ -103,6 +109,16 @@ PROVIDER_TEMPLATES: dict[str, dict[str, Any]] = {
         "model": {
             "name": "SenseNova U1",
             "model": "sensenova-u1",
+            "default_size": "1024x1024",
+            "default_aspect_ratio": "1:1",
+        },
+    },
+    "modelscope": {
+        "name": "ModelScope API-Inference",
+        "base_url": "https://api-inference.modelscope.cn",
+        "model": {
+            "name": "Qwen Image 2.1 Turbo",
+            "model": "Qwen/Qwen-Image-2.1-Turbo",
             "default_size": "1024x1024",
             "default_aspect_ratio": "1:1",
         },

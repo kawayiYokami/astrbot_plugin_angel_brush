@@ -109,6 +109,18 @@ def append_endpoint(base_url: str, suffix: str) -> str:
     return base + suffix
 
 
+def modelscope_endpoint(base_url: str, suffix: str) -> str:
+    """ModelScope 专用拼接：容忍末尾 /v1。
+
+    用户常按其它供应商的惯例把 base_url 填成 …/v1，若直接再拼 /v1/xxx 会变成
+    /v1/v1/xxx 并被供应商网关以「404 page not found」拒绝。
+    """
+    base = base_url.strip().rstrip("/")
+    if base.lower().endswith("/v1"):
+        base = base[: -len("/v1")]
+    return append_endpoint(base, suffix)
+
+
 # ---------- payload builders ----------
 
 
@@ -275,6 +287,25 @@ def comfyui_generation_payload(
 ) -> dict[str, Any]:
     # ComfyUI uses workflow JSON injection; for mock we return generic
     return {"prompt": effective_prompt(req), "model": model.get("model") or ""}
+
+
+def modelscope_payload(
+    req: dict[str, Any],
+    model: dict[str, Any],
+    image_urls: list[str] | None = None,
+) -> dict[str, Any]:
+    """ModelScope API-Inference 异步生图请求体。
+
+    编辑图时 image_urls 为 data URL / https URL 列表（image_url 字段，URL 或 base64 均可）。
+    size/quality 等该接口不支持，不下发，避免 400。
+    """
+    payload: dict[str, Any] = {
+        "model": model["model"],
+        "prompt": effective_prompt(req),
+    }
+    if image_urls:
+        payload["image_url"] = image_urls
+    return payload
 
 
 # ---------- edit helpers (resolution=最短边, aspect_ratio=比例, 不填按原图, 不拼 AxB) ----------

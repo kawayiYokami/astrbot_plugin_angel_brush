@@ -337,3 +337,278 @@ async def test_mock_openai_url_response():
             {"data": [{"url": "https://example.com/img.png"}]}
         )
         assert pending[0]["remote_url"] == "https://example.com/img.png"
+
+
+# ---------- modelscope (async task protocol) ----------
+
+
+def _modelscope_provider() -> dict:
+    return {
+        "id": "image-provider-modelscope-1",
+        "name": "ModelScope API-Inference",
+        "provider_type": "modelscope",
+        "enabled": True,
+        "base_url": "https://api-inference.modelscope.cn",
+        "api_keys": ["ms-testkey-placeholder"],
+        "timeout_seconds": 30,
+        "watermark": False,
+        "models": [
+            {
+                "id": "Qwen/Qwen-Image-2.1-Turbo",
+                "name": "Qwen Image 2.1 Turbo",
+                "model": "Qwen/Qwen-Image-2.1-Turbo",
+                "enabled": True,
+            }
+        ],
+        "comfyui_workflow_json": "",
+        "comfyui_mapping": {},
+    }
+
+
+def test_modelscope_payload():
+    from astrbot_plugin_angel_brush.core import providers as prov
+
+    req = {"prompt": "cat", "size": "1024x1024", "quality": "high"}
+    model = {"model": "Qwen/Qwen-Image-2.1-Turbo"}
+    p = prov.modelscope_payload(req, model)
+    assert p == {"model": "Qwen/Qwen-Image-2.1-Turbo", "prompt": "cat"}
+    p2 = prov.modelscope_payload(req, model, ["data:image/png;base64,xxx"])
+    assert p2["image_url"] == ["data:image/png;base64,xxx"]
+
+
+def test_modelscope_endpoint_tolerates_v1_suffix():
+    """base_url 带不带 /v1 都必须拼出正确路径，否则供应商网关回 404 page not found。"""
+    from astrbot_plugin_angel_brush.core import providers as prov
+
+    want = "https://api-inference.modelscope.cn/v1/images/generations"
+    for base in (
+        "https://api-inference.modelscope.cn",
+        "https://api-inference.modelscope.cn/",
+        "https://api-inference.modelscope.cn/v1",
+        "https://api-inference.modelscope.cn/v1/",
+    ):
+        assert prov.modelscope_endpoint(base, "/v1/images/generations") == want
+
+    assert (
+        prov.modelscope_endpoint("https://api-inference.modelscope.cn/v1", "/v1/tasks/abc")
+        == "https://api-inference.modelscope.cn/v1/tasks/abc"
+    )
+    # 直接填了完整 endpoint 也不重复
+    assert (
+        prov.modelscope_endpoint(want, "/v1/images/generations") == want
+    )
+
+
+def test_modelscope_url_guard():
+    from astrbot_plugin_angel_brush.core.service import _ensure_public_image_url
+
+    assert _ensure_public_image_url("https://cdn.example.com/a.png")
+    assert _ensure_public_image_url("data:image/png;base64,xxx")
+    for bad in (
+        "http://127.0.0.1/a.png",
+        "http://localhost/a.png",
+        "http://192.168.1.1/a.png",
+        "http://10.0.0.5/a.png",
+        "http://[::1]/a.png",
+        "http://169.254.169.254/latest/meta-data",
+        "ftp://example.com/a.png",
+    ):
+        with pytest.raises(ValueError, match="不安全"):
+            _ensure_public_image_url(bad)
+
+
+@pytest.mark.asyncio
+async def test_mock_modelscope_generate(monkeypatch):
+    from astrbot_plugin_angel_brush.core import config, service
+
+    monkeypatch.setattr(service, "_MODELSCOPE_POLL_INTERVAL", 0)
+
+    async def fake_download(provider, api_key, url):
+        assert url.startswith("https://")
+        return TINY_BYTES
+
+    monkeypatch.setattr(service, "_download_remote", fake_download)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        data_dir = Path(tmp)
+        config.save_config(
+            data_dir,
+            [_modelscope_provider()],
+            "image-provider-modelscope-1::Qwen/Qwen-Image-2.1-Turbo",
+        )
+
+        calls = {"post": 0, "poll": 0}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.method == "POST" and request.url.path == "/v1/images/generations":
+                calls["post"] += 1
+                assert request.headers.get("x-modelscope-async-mode") == "true"
+                body = json.loads(request.content)
+                assert body["model"] == "Qwen/Qwen-Image-2.1-Turbo"
+                assert body["prompt"] == "给图中的狗戴上一个生日帽"
+                assert "image_url" not in body
+                return httpx.Response(200, json={"task_id": "task-123"})
+            if (
+                request.method == "GET"
+                and request.url.path == "/v1/tasks/task-123"
+            ):
+                assert request.headers.get("x-modelscope-task-type") == "image_generation"
+                calls["poll"] += 1
+                if calls["poll"] == 1:
+                    return httpx.Response(200, json={"task_status": "RUNNING"})
+                return httpx.Response(
+                    200,
+                    json={
+                        "task_status": "SUCCEED",
+                        "output_images": ["https://cdn.example.com/out.png"],
+                    },
+                )
+            raise AssertionError(f"unexpected request {request.method} {request.url}")
+
+        transport = httpx.MockTransport(handler)
+        async with httpx.AsyncClient(
+            transport=transport, base_url="https://api-inference.modelscope.cn"
+        ) as mock_client:
+            result = await service.generate_images(
+                data_dir,
+                {"prompt": "给图中的狗戴上一个生日帽"},
+                http_client=mock_client,
+            )
+        assert calls["post"] == 1
+        assert calls["poll"] == 2
+        assert result["provider_type"] == "modelscope"
+        assert len(result["images"]) == 1
+        assert result["images"][0]["remote_url"] == "https://cdn.example.com/out.png"
+        assert Path(result["images"][0]["absolute_path"]).exists()
+
+
+@pytest.mark.asyncio
+async def test_mock_modelscope_edit(monkeypatch):
+    from astrbot_plugin_angel_brush.core import config, service
+
+    monkeypatch.setattr(service, "_MODELSCOPE_POLL_INTERVAL", 0)
+
+    async def fake_download(provider, api_key, url):
+        return TINY_BYTES
+
+    monkeypatch.setattr(service, "_download_remote", fake_download)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        data_dir = Path(tmp)
+        config.save_config(
+            data_dir,
+            [_modelscope_provider()],
+            "image-provider-modelscope-1::Qwen/Qwen-Image-2.1-Turbo",
+        )
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.method == "POST":
+                body = json.loads(request.content)
+                assert body["prompt"] == "把背景换成海边"
+                urls = body["image_url"]
+                assert isinstance(urls, list) and len(urls) == 1
+                assert urls[0].startswith("data:image/png;base64,")
+                return httpx.Response(200, json={"task_id": "task-9"})
+            assert request.url.path == "/v1/tasks/task-9"
+            return httpx.Response(
+                200,
+                json={
+                    "task_status": "SUCCEED",
+                    "output_images": ["https://cdn.example.com/edit.png"],
+                },
+            )
+
+        transport = httpx.MockTransport(handler)
+        async with httpx.AsyncClient(
+            transport=transport, base_url="https://api-inference.modelscope.cn"
+        ) as mock_client:
+            result = await service.generate_images(
+                data_dir,
+                {
+                    "prompt": "把背景换成海边",
+                    "images": [f"data:image/png;base64,{TINY_B64}"],
+                    "operation": "edit",
+                },
+                http_client=mock_client,
+            )
+        assert len(result["images"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_mock_modelscope_generate_base_v1(monkeypatch):
+    """base_url 带 /v1 时整条链路仍请求正确路径（回归 404 page not found）。"""
+    from astrbot_plugin_angel_brush.core import config, service
+
+    monkeypatch.setattr(service, "_MODELSCOPE_POLL_INTERVAL", 0)
+
+    async def fake_download(provider, api_key, url):
+        return TINY_BYTES
+
+    monkeypatch.setattr(service, "_download_remote", fake_download)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        data_dir = Path(tmp)
+        p = _modelscope_provider()
+        p["base_url"] = "https://api-inference.modelscope.cn/v1"
+        config.save_config(
+            data_dir,
+            [p],
+            "image-provider-modelscope-1::Qwen/Qwen-Image-2.1-Turbo",
+        )
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.method == "POST":
+                assert request.url.path == "/v1/images/generations", request.url.path
+                return httpx.Response(200, json={"task_id": "task-123"})
+            assert request.url.path == "/v1/tasks/task-123", request.url.path
+            return httpx.Response(
+                200,
+                json={
+                    "task_status": "SUCCEED",
+                    "output_images": ["https://cdn.example.com/out.png"],
+                },
+            )
+
+        transport = httpx.MockTransport(handler)
+        async with httpx.AsyncClient(
+            transport=transport, base_url="https://api-inference.modelscope.cn"
+        ) as mock_client:
+            result = await service.generate_images(
+                data_dir, {"prompt": "cat"}, http_client=mock_client
+            )
+        assert result["provider_type"] == "modelscope"
+        assert len(result["images"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_mock_modelscope_task_failed(monkeypatch):
+    from astrbot_plugin_angel_brush.core import config, service
+
+    monkeypatch.setattr(service, "_MODELSCOPE_POLL_INTERVAL", 0)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        data_dir = Path(tmp)
+        config.save_config(
+            data_dir,
+            [_modelscope_provider()],
+            "image-provider-modelscope-1::Qwen/Qwen-Image-2.1-Turbo",
+        )
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.method == "POST":
+                return httpx.Response(200, json={"task_id": "task-x"})
+            return httpx.Response(
+                200,
+                json={"task_status": "FAILED", "message": "模型排队超时"},
+            )
+
+        transport = httpx.MockTransport(handler)
+        async with httpx.AsyncClient(
+            transport=transport, base_url="https://api-inference.modelscope.cn"
+        ) as mock_client:
+            with pytest.raises(ValueError, match="生图任务失败：模型排队超时"):
+                await service.generate_images(
+                    data_dir,
+                    {"prompt": "cat"},
+                    http_client=mock_client,
+                )

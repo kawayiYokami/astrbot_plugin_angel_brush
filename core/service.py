@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import io
+import ipaddress
+import re
+import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse, unquote
@@ -185,10 +189,98 @@ async def _load_edit_inputs(req: dict[str, Any]) -> dict[str, Any]:
 
 def _select_api_key(provider: dict[str, Any]) -> str:
     keys = [str(k).strip() for k in (provider.get("api_keys") or []) if str(k).strip()]
-    if not keys:
-        return ""
-    # simple round-robin by cursor file? use first for now
-    return keys[0]
+    if keys:
+        # simple round-robin by cursor file? use first for now
+        return keys[0]
+    if provider.get("provider_type") == "modelscope":
+        for var in ("MODELSCOPE_API_TOKEN", "MODELSCOPE_API_KEY"):
+            v = str(os.environ.get(var) or "").strip()
+            if v:
+                return v
+    return ""
+
+
+# ModelScope 异步任务轮询间隔（秒），测试可通过 monkeypatch 调小
+_MODELSCOPE_POLL_INTERVAL = 5.0
+_MODELSCOPE_TASK_ID_RE = re.compile(r"[A-Za-z0-9_\-]{1,128}")
+
+
+def _ensure_public_image_url(url: str) -> str:
+    """校验供应商返回的图片 URL：仅放行 http/https（data: 直解无需请求）；
+    拒绝 localhost、环回、私有、链路本地、保留与组播地址，防 SSRF。"""
+    parsed = urlparse(url)
+    if parsed.scheme == "data":
+        return url
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(f"不安全的图片地址协议：{parsed.scheme or '(无协议)'}")
+    host = parsed.hostname
+    if not host:
+        raise ValueError("不安全的图片地址：缺少主机名")
+    low = host.lower().rstrip(".")
+    if low == "localhost" or low.endswith(".localhost"):
+        raise ValueError(f"不安全的图片地址：禁止本机地址 {host}")
+    try:
+        ip = ipaddress.ip_address(low)
+    except ValueError:
+        return url
+    if (
+        ip.is_loopback
+        or ip.is_private
+        or ip.is_reserved
+        or ip.is_link_local
+        or ip.is_multicast
+        or ip.is_unspecified
+    ):
+        raise ValueError(f"不安全的图片地址：禁止内网或保留地址 {host}")
+    return url
+
+
+async def _poll_modelscope_task(
+    provider: dict[str, Any],
+    client: httpx.AsyncClient,
+    api_key: str,
+    task_id: str,
+) -> list[dict[str, Any]]:
+    """轮询 ModelScope 异步生图任务，SUCCEED 返回 pending 图片列表，FAILED 报错。"""
+    if not _MODELSCOPE_TASK_ID_RE.fullmatch(task_id):
+        raise ValueError(f"{provider['name']} 返回的任务 ID 无效")
+    poll_url = prov.modelscope_endpoint(provider["base_url"], f"/v1/tasks/{task_id}")
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "X-ModelScope-Task-Type": "image_generation",
+    }
+    timeout = int(provider.get("timeout_seconds") or 600)
+    deadline = time.monotonic() + max(10, timeout)
+    while True:
+        pr = await client.get(poll_url, headers=headers)
+        if pr.status_code >= 400:
+            raise ValueError(
+                f"{provider['name']} 任务查询失败：HTTP {pr.status_code}，{pr.text[:2000]}"
+            )
+        pdata = pr.json()
+        status = str(pdata.get("task_status") or "").upper()
+        if status == "SUCCEED":
+            out: list[dict[str, Any]] = []
+            for item in pdata.get("output_images") or []:
+                u = str(item or "").strip()
+                if not u:
+                    continue
+                out.append(
+                    {"remote_url": _ensure_public_image_url(u), "revised_prompt": None}
+                )
+            if not out:
+                raise ValueError(f"{provider['name']} 任务成功但未返回图片")
+            return out
+        if status == "FAILED":
+            msg = str(
+                pdata.get("message") or pdata.get("error") or pdata.get("code") or "生图失败"
+            )
+            raise ValueError(f"{provider['name']} 生图任务失败：{msg[:500]}")
+        if time.monotonic() >= deadline:
+            raise ValueError(
+                f"{provider['name']} 生图任务超时（{timeout}s），当前状态：{status or '未知'}"
+            )
+        await asyncio.sleep(_MODELSCOPE_POLL_INTERVAL)
 
 
 def _parse_openai_response(value: dict[str, Any]) -> list[dict[str, Any]]:
@@ -530,6 +622,47 @@ async def _request_with_provider(
                     )
                 pending = _parse_openai_response(resp.json())
                 return pending, None
+
+        elif kind == "modelscope":
+            image_urls: list[str] | None = None
+            if req["operation"] == "edit":
+                if len(edit_inputs["images"]) > 10:
+                    raise ValueError(
+                        f"{provider['name']} 图像编辑最多支持 10 张输入图片，当前 {len(edit_inputs['images'])} 张"
+                    )
+                if edit_inputs["mask"]:
+                    raise ValueError(
+                        f"{provider['name']} 图像编辑暂不支持蒙版，请改用文字描述需要修改的区域"
+                    )
+                image_urls = [
+                    _image_to_data_url(im["bytes"], im["mime"])
+                    for im in edit_inputs["images"]
+                ]
+            payload = prov.modelscope_payload(req, model, image_urls)
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "X-ModelScope-Async-Mode": "true",
+            }
+            endpoint = prov.modelscope_endpoint(
+                provider["base_url"], "/v1/images/generations"
+            )
+            logger.info(
+                f"[天使的画笔] modelscope POST {endpoint} "
+                f"model={model['model']} async=true"
+            )
+            resp = await client.post(endpoint, json=payload, headers=headers)
+            if resp.status_code >= 400:
+                raise ValueError(
+                    f"{provider['name']} 请求失败：HTTP {resp.status_code}，{resp.text[:2000]}"
+                )
+            value = resp.json()
+            task_id = str(value.get("task_id") or "").strip()
+            if not task_id:
+                raise ValueError(
+                    f"{provider['name']} 响应缺少 task_id：{str(value)[:500]}"
+                )
+            pending = await _poll_modelscope_task(provider, client, api_key, task_id)
+            return pending, None
 
         elif kind == "comfyui":
             raise ValueError("ComfyUI 暂未实现，请使用 openai 兼容供应商")

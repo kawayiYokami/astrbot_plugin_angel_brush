@@ -48,7 +48,7 @@
           <div>
             <h2 class="text-h4 mb-0">供应商设置</h2>
             <p class="content-sub text-caption text-medium-emphasis mb-0">
-              6 家协议 openai / xai / seedream / gemini / sensenova / comfyui，保存后即时生效
+              7 家协议 openai / xai / seedream / gemini / sensenova / modelscope / comfyui，保存后即时生效
             </p>
           </div>
           <div class="d-flex align-center ga-2">
@@ -119,7 +119,7 @@
                   </v-list-item>
                 </v-col>
                 <v-col cols="12" sm="6" class="config-input">
-                  <v-select v-model="p.provider_type" variant="outlined" density="compact" :items="kindOptions" hide-details class="config-field" />
+                  <v-select v-model="p.provider_type" variant="outlined" density="compact" :items="kindOptions" hide-details class="config-field" @update:model-value="(v: any) => onKindChange(p, String(v || ''))" />
                 </v-col>
               </v-row>
 
@@ -129,7 +129,7 @@
                 <v-col cols="12" sm="6" class="property-info">
                   <v-list-item density="compact">
                     <v-list-item-title class="property-name">Base URL</v-list-item-title>
-                    <v-list-item-subtitle class="property-hint">如：https://api.openai.com/v1</v-list-item-subtitle>
+                    <v-list-item-subtitle class="property-hint">{{ p.provider_type === 'modelscope' ? 'ModelScope 填根地址即可，如 https://api-inference.modelscope.cn（带不带 /v1 都行）' : '如：https://api.openai.com/v1' }}</v-list-item-subtitle>
                   </v-list-item>
                 </v-col>
                 <v-col cols="12" sm="6" class="config-input">
@@ -727,7 +727,7 @@ function onNav(key: NavKey) {
 }
 
 // ---------- 选项 ----------
-const kindOptions = ['openai', 'xai', 'seedream', 'gemini', 'sensenova', 'comfyui']
+const kindOptions = ['openai', 'xai', 'seedream', 'gemini', 'sensenova', 'modelscope', 'comfyui']
 const resOptions = ['512x512', '1024x1024', '1024x1536', '1536x1024', '1K', '2K']
 const editResOptions = ['512', '1024', '1536', '2048']
 
@@ -789,6 +789,7 @@ const MODEL_STYLE_PREVIEW: Record<string, string> = {
   'gpt-image': '版式化设计/信息卡片、吉卜力/水彩/绘本、3D Q版/Low Poly/像素/矢量插画',
   gemini: '写实摄影纪实、3D 卡通等距微缩、信息图表商业营销（含清晰字体渲染）',
   sensenova: '扁平插画手绘、专业平面设计商用海报、长卷连环叙事、细腻写实',
+  modelscope: '复杂指令遵循与多图编辑、图内中英文文字渲染、写实人像与设计感插画兼顾',
 }
 const currentModelStyle = computed(() => {
   const id = defaultModelId.value
@@ -853,6 +854,18 @@ async function reload() {
   } finally {
     loading.value = false
   }
+}
+
+function onKindChange(p: Provider, kind: string) {
+  // 仅当 base_url 为空或仍是某模板默认值时自动跟随新类型；用户自定义地址不动
+  const norm = (s: unknown) => String(s ?? '').trim().replace(/\/+$/, '').toLowerCase()
+  const urls = Object.values(templates.value).map((t: any) => norm(t?.base_url))
+  if (p.base_url.trim() && !urls.includes(norm(p.base_url))) return
+  const tmpl: any = templates.value[kind]
+  if (!tmpl?.base_url) return
+  p.base_url = tmpl.base_url
+  const names = Object.values(templates.value).map((t: any) => String(t?.name || ''))
+  if (!p.name.trim() || names.includes(p.name)) p.name = tmpl.name || ''
 }
 
 function addProvider() {
